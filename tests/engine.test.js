@@ -422,4 +422,160 @@
       }
     });
   });
+
+  describe('Scoring', function () {
+    function scoreOnce(opts) {
+      const st = Scoring.create();
+      if (opts.level) st.level = opts.level;
+      return Scoring.applyLock(st, {
+        lines: opts.lines,
+        spin: opts.spin || 'none',
+        perfectClear: opts.perfectClear === true
+      }).points;
+    }
+
+    it('scores the plain line clears', function () {
+      assertEqual(scoreOnce({ lines: 1 }), 100);
+      assertEqual(scoreOnce({ lines: 2 }), 300);
+      assertEqual(scoreOnce({ lines: 3 }), 500);
+      assertEqual(scoreOnce({ lines: 4 }), 800);
+    });
+
+    it('scores a lock that clears nothing as zero', function () {
+      assertEqual(scoreOnce({ lines: 0 }), 0);
+    });
+
+    it('scores T-spins', function () {
+      assertEqual(scoreOnce({ lines: 0, spin: 'tspin' }), 400);
+      assertEqual(scoreOnce({ lines: 1, spin: 'tspin' }), 800);
+      assertEqual(scoreOnce({ lines: 2, spin: 'tspin' }), 1200);
+      assertEqual(scoreOnce({ lines: 3, spin: 'tspin' }), 1600);
+    });
+
+    it('scores mini T-spins', function () {
+      assertEqual(scoreOnce({ lines: 0, spin: 'mini' }), 100);
+      assertEqual(scoreOnce({ lines: 1, spin: 'mini' }), 200);
+      assertEqual(scoreOnce({ lines: 2, spin: 'mini' }), 400);
+    });
+
+    it('multiplies by level', function () {
+      assertEqual(scoreOnce({ lines: 4, level: 5 }), 4000);
+      assertEqual(scoreOnce({ lines: 2, spin: 'tspin', level: 3 }), 3600);
+    });
+
+    it('names the clear kind', function () {
+      assertEqual(Scoring.kindFor(1, 'none'), 'single');
+      assertEqual(Scoring.kindFor(4, 'none'), 'tetris');
+      assertEqual(Scoring.kindFor(0, 'tspin'), 'tspin');
+      assertEqual(Scoring.kindFor(2, 'tspin'), 'tspin-double');
+      assertEqual(Scoring.kindFor(1, 'mini'), 'mini-single');
+      assertEqual(Scoring.kindFor(0, 'none'), 'none');
+    });
+
+    it('starts a combo on the second consecutive clear', function () {
+      const st = Scoring.create();
+      const first = Scoring.applyLock(st, { lines: 1, spin: 'none', perfectClear: false });
+      assertEqual(first.chain, 1);
+      assertEqual(first.points, 100, 'no combo bonus on the first clear');
+
+      const second = Scoring.applyLock(st, { lines: 1, spin: 'none', perfectClear: false });
+      assertEqual(second.chain, 2);
+      assertEqual(second.points, 150, '100 for the single plus 50 for combo 1');
+
+      const third = Scoring.applyLock(st, { lines: 1, spin: 'none', perfectClear: false });
+      assertEqual(third.chain, 3);
+      assertEqual(third.points, 200, '100 plus 100 for combo 2');
+    });
+
+    it('breaks the combo on a lock that clears nothing', function () {
+      const st = Scoring.create();
+      Scoring.applyLock(st, { lines: 1, spin: 'none', perfectClear: false });
+      Scoring.applyLock(st, { lines: 1, spin: 'none', perfectClear: false });
+      const dry = Scoring.applyLock(st, { lines: 0, spin: 'none', perfectClear: false });
+      assertEqual(dry.chain, 0);
+      assertEqual(st.chain, 0);
+    });
+
+    it('sets back-to-back on a tetris and rewards the next difficult clear', function () {
+      const st = Scoring.create();
+      const first = Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      assertEqual(first.b2b, false, 'the first tetris has nothing to chain from');
+      assertEqual(first.points, 800);
+
+      const second = Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      assertEqual(second.b2b, true);
+      // 800 * 1.5 = 1200, plus 50 for combo 1
+      assertEqual(second.points, 1250);
+    });
+
+    it('chains back-to-back between a tetris and a T-spin', function () {
+      const st = Scoring.create();
+      Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      const spin = Scoring.applyLock(st, { lines: 2, spin: 'tspin', perfectClear: false });
+      assertEqual(spin.b2b, true);
+      // 1200 * 1.5 = 1800, plus 50 for combo 1
+      assertEqual(spin.points, 1850);
+    });
+
+    it('breaks back-to-back on an easy clear', function () {
+      const st = Scoring.create();
+      Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      const easy = Scoring.applyLock(st, { lines: 2, spin: 'none', perfectClear: false });
+      assertEqual(easy.b2b, false);
+      assertEqual(st.b2b, false, 'an easy clear ends the chain');
+    });
+
+    it('keeps back-to-back alive across a lock that clears nothing', function () {
+      const st = Scoring.create();
+      Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      Scoring.applyLock(st, { lines: 0, spin: 'none', perfectClear: false });
+      assertEqual(st.b2b, true, 'a dry lock breaks the combo but not back-to-back');
+      const next = Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      assertEqual(next.b2b, true);
+    });
+
+    it('adds the perfect clear bonus on top', function () {
+      assertEqual(scoreOnce({ lines: 1, perfectClear: true }), 100 + 800);
+      assertEqual(scoreOnce({ lines: 4, perfectClear: true }), 800 + 2000);
+    });
+
+    it('counts lines and raises the level every ten', function () {
+      const st = Scoring.create();
+      assertEqual(Scoring.levelForLines(0), 1);
+      assertEqual(Scoring.levelForLines(9), 1);
+      assertEqual(Scoring.levelForLines(10), 2);
+      assertEqual(Scoring.levelForLines(25), 3);
+
+      for (let i = 0; i < 4; i++) {
+        Scoring.applyLock(st, { lines: 2, spin: 'none', perfectClear: false });
+      }
+      assertEqual(st.lines, 8);
+      assertEqual(st.level, 1);
+      const tenth = Scoring.applyLock(st, { lines: 2, spin: 'none', perfectClear: false });
+      assertEqual(st.lines, 10);
+      assertEqual(st.level, 2);
+      assertEqual(tenth.leveledUp, true);
+    });
+
+    it('awards drop points without the level multiplier', function () {
+      const st = Scoring.create();
+      st.level = 9;
+      assertEqual(Scoring.addDropPoints(st, 5, false), 5, 'soft drop is 1 per cell');
+      assertEqual(Scoring.addDropPoints(st, 5, true), 10, 'hard drop is 2 per cell');
+      assertEqual(st.score, 15);
+    });
+
+    it('starts level 1 at one second per cell and speeds up from there', function () {
+      assertEqual(Math.round(Scoring.gravityMs(1)), 1000);
+      assert(Scoring.gravityMs(5) < Scoring.gravityMs(4), 'level 5 is faster than 4');
+      assert(Scoring.gravityMs(15) < 16.7, 'level 15 is under one frame');
+    });
+
+    it('never returns a broken gravity value at absurd levels', function () {
+      for (const level of [20, 50, 200, 5000]) {
+        const ms = Scoring.gravityMs(level);
+        assert(isFinite(ms) && ms > 0, 'level ' + level + ' produced ' + ms);
+      }
+    });
+  });
 })();
