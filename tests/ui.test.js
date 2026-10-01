@@ -464,4 +464,101 @@
       assertEqual(bests.marathon.score, 12000);
     });
   });
+
+  describe('SpinGuide lessons', function () {
+    function lastRotation(result) {
+      const rotations = result.events.filter(e => e.type === 'rotate');
+      return rotations.length ? rotations[rotations.length - 1] : null;
+    }
+
+    function lockOf(result) {
+      return result.events.filter(e => e.type === 'lock')[0] || null;
+    }
+
+    it('describes seven lessons, each with the fields the player needs', function () {
+      assertEqual(SpinGuide.LESSONS.length, 7);
+      const ids = {};
+      for (const lesson of SpinGuide.LESSONS) {
+        assert(typeof lesson.id === 'string' && lesson.id.length > 0, 'a lesson has no id');
+        assert(ids[lesson.id] !== true, 'duplicate lesson id: ' + lesson.id);
+        ids[lesson.id] = true;
+        assert(typeof lesson.title === 'string' && lesson.title.length > 0, lesson.id + ' has no title');
+        assert(typeof lesson.blurb === 'string' && lesson.blurb.length > 0, lesson.id + ' has no blurb');
+        assert(Array.isArray(lesson.steps), lesson.id + ' has no steps');
+        for (const step of lesson.steps) {
+          assert(typeof step.caption === 'string' && step.caption.length > 0,
+            lesson.id + ' has a step with no caption');
+        }
+      }
+      assert(ids['kick-table'] === true, 'the kick table reference lesson is missing');
+    });
+
+    it('returns a lesson by id and null for anything else', function () {
+      assertEqual(SpinGuide.lessonById('tspin-double').id, 'tspin-double');
+      assertEqual(SpinGuide.lessonById('nope'), null);
+    });
+
+    it('brings the T back to its spawn state after four rotations', function () {
+      const result = SpinGuide.runLesson(SpinGuide.lessonById('basic-rotation'));
+      assertEqual(result.game.piece.state, '0');
+      assertEqual(result.events.filter(e => e.type === 'rotate').length, 4);
+    });
+
+    it('kicks the I away from the wall in the wall kick lesson', function () {
+      const result = SpinGuide.runLesson(SpinGuide.lessonById('wall-kick'));
+      const rotation = lastRotation(result);
+      assert(rotation, 'the lesson never rotated');
+      assertEqual(rotation.kickIndex, 1, 'the wall kick did not use the second offset');
+      assertEqual(result.game.piece.x, 0, 'the I did not end up clear of the wall');
+    });
+
+    it('kicks the I off the floor in the floor kick lesson', function () {
+      const result = SpinGuide.runLesson(SpinGuide.lessonById('floor-kick'));
+      const rotation = lastRotation(result);
+      assert(rotation, 'the lesson never rotated');
+      assertEqual(rotation.kickIndex, 4, 'the floor kick did not use the last offset');
+    });
+
+    it('really produces a T-spin single', function () {
+      const lock = lockOf(SpinGuide.runLesson(SpinGuide.lessonById('tspin-single')));
+      assert(lock, 'the lesson never locked a piece');
+      assertEqual(lock.spin, 'tspin');
+      assertEqual(lock.lines, 1);
+      assertEqual(lock.kind, 'tspin-single');
+    });
+
+    it('really produces a T-spin double', function () {
+      const lock = lockOf(SpinGuide.runLesson(SpinGuide.lessonById('tspin-double')));
+      assert(lock, 'the lesson never locked a piece');
+      assertEqual(lock.spin, 'tspin');
+      assertEqual(lock.lines, 2);
+      assertEqual(lock.kind, 'tspin-double');
+    });
+
+    it('really produces a T-spin triple, through the fifth kick', function () {
+      const result = SpinGuide.runLesson(SpinGuide.lessonById('tspin-triple'));
+      const rotation = lastRotation(result);
+      assertEqual(rotation.kickIndex, 4, 'a T-spin triple must use the deep kick');
+      const lock = lockOf(result);
+      assert(lock, 'the lesson never locked a piece');
+      assertEqual(lock.spin, 'tspin');
+      assertEqual(lock.lines, 3);
+      assertEqual(lock.kind, 'tspin-triple');
+    });
+
+    it('treats the kick table page as a reference, not a run', function () {
+      const lesson = SpinGuide.lessonById('kick-table');
+      assertEqual(lesson.reference, true);
+      assertEqual(SpinGuide.runLesson(lesson), null, 'a reference lesson should not be runnable');
+    });
+
+    it('replays only as far as the step asked for', function () {
+      const lesson = SpinGuide.lessonById('tspin-double');
+      const partial = SpinGuide.runLesson(lesson, 1);
+      assertEqual(partial.stepsRun, 1);
+      assertEqual(lockOf(partial), null, 'the piece locked before the lesson finished');
+      const full = SpinGuide.runLesson(lesson);
+      assertEqual(full.stepsRun, lesson.steps.length);
+    });
+  });
 })();

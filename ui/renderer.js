@@ -294,8 +294,12 @@
         if (ghost !== null && ghost !== game.piece.y) drawPiece(game.piece, ghost, true);
         drawPiece(game.piece, game.piece.y, false);
       }
-      drawHold(game);
-      drawNext(game);
+      // A lesson has no meaningful hold slot or next queue, and showing
+      // them next to a taught position is just noise.
+      if (state.panels !== false) {
+        drawHold(game);
+        drawNext(game);
+      }
     }
 
     resize();

@@ -183,3 +183,66 @@ html, body {
 
 .binding { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .binding button { padding: 4px 10px; font-size: 12px; min-width: 120px; }
+
+.guide-panel { width: min(880px, 94vw); text-align: left; }
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-body { display: flex; gap: 16px; align-items: flex-start; }
+
+.guide-list { display: flex; flex-direction: column; gap: 4px; width: 164px; flex: 0 0 auto; }
+.guide-list button { text-align: left; font-size: 12px; padding: 7px 10px; }
+.guide-list button.active { background: #333a55; border-color: #6b78ad; color: #fff; }
+
+.guide-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: min(460px, 46vh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#guide-canvas { display: block; }
+
+.guide-reference { font-size: 11px; line-height: 1.6; max-height: 340px; overflow-y: auto; width: 100%; }
+.guide-reference h3 { margin: 10px 0 4px; font-size: 12px; color: #8ea0ff; }
+.kick-rows { display: flex; flex-direction: column; gap: 2px; }
+.kick-row { display: flex; gap: 10px; font-family: ui-monospace, monospace; }
+.kick-row b { min-width: 64px; color: #9aa1bb; font-weight: 600; }
+
+.guide-kick {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 3px 8px;
+  font: 600 11px ui-monospace, monospace;
+  color: #ffd98a;
+  background: rgba(10, 11, 16, 0.85);
+  border-radius: 4px;
+}
+
+.guide-caption {
+  margin: 12px 0 0;
+  min-height: 3.2em;
+  font-size: 13px;
+  color: #c4c9dc;
+}
+
+.guide-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.guide-controls select {
+  padding: 8px 10px;
+  color: #eceef5;
+  background: #222636;
+  border: 1px solid #343a52;
+  border-radius: 8px;
+}
+.guide-progress { margin-left: auto; font: 600 12px ui-monospace, monospace; color: #7c829a; }

@@ -61,14 +61,27 @@
     screens.show('over');
   }
 
+  const guide = SpinGuide.create({
+    overlay: document.getElementById('guide'),
+    canvas: document.getElementById('guide-canvas'),
+    list: document.getElementById('guide-list'),
+    title: document.getElementById('guide-title'),
+    caption: document.getElementById('guide-caption'),
+    progress: document.getElementById('guide-progress'),
+    reference: document.getElementById('guide-reference'),
+    kick: document.getElementById('guide-kick'),
+    play: document.getElementById('guide-play'),
+    next: document.getElementById('guide-next'),
+    prev: document.getElementById('guide-prev'),
+    replayButton: document.getElementById('guide-replay'),
+    close: document.getElementById('guide-close'),
+    speed: document.getElementById('guide-speed')
+  });
+
   const screensOptions = {
     app: null,
     onStartGame: function (mode) { newGame(mode); },
-    onOpenGuide: function () {
-      // The guide arrives in a later task; until then the button is inert
-      // rather than broken.
-      if (root.SpinGuide && root.SpinGuide.open) root.SpinGuide.open();
-    }
+    onOpenGuide: function () { guide.open(); }
   };
   const screens = Screens.create(screensOptions);
 
@@ -144,6 +157,7 @@
     getGame: function () { return game; },
     getInput: function () { return input; },
     getRenderer: function () { return renderer; },
+    getGuide: function () { return guide; },
     onEvents: function (handler) { listeners.push(handler); }
   };
   screensOptions.app = root.App;

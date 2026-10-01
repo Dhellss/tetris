@@ -71,6 +71,41 @@
     </section>
   </div>
 
+
+  <div id="guide" class="overlay" hidden>
+    <section class="panel guide-panel">
+      <header class="guide-head">
+        <h2 id="guide-title">Spin Guide</h2>
+        <button type="button" id="guide-close">Close</button>
+      </header>
+
+      <div class="guide-body">
+        <nav id="guide-list" class="guide-list"></nav>
+
+        <div class="guide-stage">
+          <canvas id="guide-canvas"></canvas>
+          <div id="guide-reference" class="guide-reference" hidden></div>
+          <p id="guide-kick" class="guide-kick" hidden></p>
+        </div>
+      </div>
+
+      <p id="guide-caption" class="guide-caption"></p>
+
+      <footer class="guide-controls">
+        <button type="button" id="guide-prev">◀ Back</button>
+        <button type="button" id="guide-play">Play / Pause</button>
+        <button type="button" id="guide-next">Next ▶</button>
+        <button type="button" id="guide-replay">Replay</button>
+        <select id="guide-speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+        </select>
+        <span id="guide-progress" class="guide-progress"></span>
+      </footer>
+    </section>
+  </div>
+
   <noscript>
     <p class="fallback">This game needs JavaScript enabled to run.</p>
   </noscript>
@@ -86,7 +121,7 @@
   <script src="ui/hud.js"></script>
   <script src="ui/bests.js"></script>
   <script src="ui/screens.js"></script>
-  <!-- the spin guide arrives in the next task -->
+  <script src="guide/spin-guide.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

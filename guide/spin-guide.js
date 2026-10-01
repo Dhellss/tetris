@@ -1,0 +1,415 @@
+(function (root) {
+  'use strict';
+
+  const TICK_MS = 50;
+  const SPEEDS = [0.25, 0.5, 1];
+  const MAX_ITERATIONS = 300;
+
+  // Each lesson is a board, a scripted piece order, and an ordered list of
+  // steps. A step with dtMs 0 applies its actions without letting any time
+  // pass, which keeps gravity out of the way of what is being taught.
+  const LESSONS = [
+    {
+      id: 'basic-rotation',
+      title: 'Rotation states',
+      blurb: 'Every piece has four states. Rotating does not move the piece around a corner — it spins it about a fixed centre.',
+      rows: [],
+      pieces: ['T'],
+      steps: [
+        { caption: 'A T spawns flat-side-down. This is state 0.', actions: {} },
+        { caption: 'One rotation clockwise: state R. The centre cell has not moved.', actions: { rotateCW: true } },
+        { caption: 'Again: state 2, upside down.', actions: { rotateCW: true } },
+        { caption: 'Again: state L.', actions: { rotateCW: true } },
+        { caption: 'Four rotations return the piece to state 0.', actions: { rotateCW: true } }
+      ]
+    },
+    {
+      id: 'wall-kick',
+      title: 'Wall kick',
+      blurb: 'When a rotation would push a piece into the wall, SRS tries up to five positions in a fixed order and takes the first that fits. That nudge is the kick.',
+      rows: [],
+      pieces: ['I'],
+      steps: [
+        { caption: 'Stand an I on end.', actions: { rotateCW: true } },
+        { caption: 'Slide it against the left wall.', actions: { left: true }, repeat: 5 },
+        {
+          caption: 'Rotating flat would put two cells through the wall. The first offset fails, so SRS tries the second — two columns right — and the I snaps clear.',
+          actions: { rotateCCW: true }
+        }
+      ],
+      expect: { kickIndex: 1 }
+    },
+    {
+      id: 'floor-kick',
+      title: 'Floor kick',
+      blurb: 'The same five offsets work vertically. A piece lying on the floor can still stand up, because one of the later offsets lifts it.',
+      rows: [],
+      pieces: ['I'],
+      steps: [
+        { caption: 'Let a flat I settle on the floor.', until: 'grounded' },
+        {
+          caption: 'Standing it up needs four rows, and only one is free. Offsets one through four all fail; the fifth lifts the I two rows and it stands.',
+          actions: { rotateCW: true }
+        }
+      ],
+      expect: { kickIndex: 4 }
+    },
+    {
+      id: 'tspin-single',
+      title: 'T-Spin Single',
+      blurb: 'A T-spin needs a slot the T cannot fall into — it has to be rotated in. Three of the four corners around the T must be filled, and the rotation must be the last thing that moved it.',
+      rows: [
+        '.....X....',
+        'XXX...XXXX',
+        'XXXX.XXXX.'
+      ],
+      pieces: ['T'],
+      steps: [
+        { caption: 'The overhang on the top row seals the slot. Nothing can drop straight in.', actions: {} },
+        { caption: 'Turn the T so its nub points left.', actions: { rotateCCW: true } },
+        { caption: 'Drop it beside the slot.', until: 'grounded' },
+        { caption: 'One more rotation and the T turns into the slot. Three corners are filled, so this counts as a spin.', actions: { rotateCCW: true } },
+        { caption: 'The middle row completes: a T-Spin Single.', until: 'locked' }
+      ],
+      expect: { spin: 'tspin', lines: 1, kind: 'tspin-single' }
+    },
+    {
+      id: 'tspin-double',
+      title: 'T-Spin Double',
+      blurb: 'The same shape, one row deeper. The T fills the gap in two rows at once, which is the bread-and-butter T-spin.',
+      rows: [
+        '.....X....',
+        'XXX...XXXX',
+        'XXXX.XXXXX'
+      ],
+      pieces: ['T'],
+      steps: [
+        { caption: 'Two rows need filling, and the only hole in the bottom row is one cell wide.', actions: {} },
+        { caption: 'Point the nub left.', actions: { rotateCCW: true } },
+        { caption: 'Drop in beside the slot.', until: 'grounded' },
+        { caption: 'Rotate. The bar fills the middle row and the nub drops into the bottom one.', actions: { rotateCCW: true } },
+        { caption: 'Two rows clear: a T-Spin Double.', until: 'locked' }
+      ],
+      expect: { spin: 'tspin', lines: 2, kind: 'tspin-double' }
+    },
+    {
+      id: 'tspin-triple',
+      title: 'T-Spin Triple',
+      blurb: 'The deep one. Only the fifth kick offset reaches this slot, which is why a T-spin Triple is impossible without wall kicks.',
+      rows: [
+        '....X.....',
+        '..........',
+        'XXXX.XXXXX',
+        'XXXX..XXXX',
+        'XXXX.XXXXX'
+      ],
+      pieces: ['T'],
+      steps: [
+        { caption: 'A three-row notch with an overhang halfway down. No rotation from directly above can reach it.', actions: {} },
+        { caption: 'Walk the T right, clear of the block above the notch.', actions: { right: true }, repeat: 2 },
+        { caption: 'Let it settle on the overhang.', until: 'grounded' },
+        { caption: 'Step back left, so the T sits directly over the notch.', actions: { left: true } },
+        {
+          caption: 'Rotate clockwise. The first four offsets are all blocked; the fifth drops the T a column left and two rows down, straight into the notch.',
+          actions: { rotateCW: true }
+        },
+        { caption: 'All three rows complete: a T-Spin Triple.', until: 'locked' }
+      ],
+      expect: { kickIndex: 4, spin: 'tspin', lines: 3, kind: 'tspin-triple' }
+    },
+    {
+      id: 'kick-table',
+      title: 'The kick tables',
+      blurb: 'The five offsets SRS tries, for every rotation. The I piece has its own table. Offsets are listed x then y, with y counted upward.',
+      reference: true,
+      rows: [],
+      pieces: [],
+      steps: [
+        { caption: 'J, L, S, T and Z share one table. The I piece uses the other. O never kicks, because its four states occupy the same cells.' }
+      ]
+    }
+  ];
+
+  function lessonById(id) {
+    for (let i = 0; i < LESSONS.length; i++) {
+      if (LESSONS[i].id === id) return LESSONS[i];
+    }
+    return null;
+  }
+
+  function collect(into, batch) {
+    for (let i = 0; i < batch.length; i++) into.push(batch[i]);
+  }
+
+  function runStep(game, step, events) {
+    if (step.until === 'grounded') {
+      for (let i = 0; i < MAX_ITERATIONS && game.piece && !Game.isGrounded(game); i++) {
+        collect(events, Game.tick(game, TICK_MS, { softDrop: true }));
+      }
+      return;
+    }
+    if (step.until === 'locked') {
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        const batch = Game.tick(game, TICK_MS, {});
+        collect(events, batch);
+        let locked = false;
+        for (let e = 0; e < batch.length; e++) {
+          if (batch[e].type === 'lock') locked = true;
+        }
+        if (locked) return;
+      }
+      return;
+    }
+
+    const repeat = step.repeat || 1;
+    const dt = step.dtMs || 0;
+    for (let i = 0; i < repeat; i++) {
+      collect(events, Game.tick(game, dt, step.actions || {}));
+    }
+  }
+
+  // Replays the lesson from scratch every time. Stepping backwards in the
+  // player is then just "run to step n - 1", which keeps the player free of
+  // its own copy of game state.
+  function runLesson(lesson, upToStep) {
+    if (!lesson || lesson.reference) return null;
+
+    const limit = (upToStep === undefined || upToStep === null)
+      ? lesson.steps.length
+      : Math.max(0, Math.min(upToStep, lesson.steps.length));
+
+    const game = Game.create({
+      board: lesson.rows.length ? Board.fromRows(lesson.rows) : Board.create(),
+      pieces: lesson.pieces,
+      seed: 1,
+      lockDelayMs: 500
+    });
+
+    const events = [];
+    const rotations = [];
+    let stepsRun = 0;
+
+    for (let i = 0; i < limit; i++) {
+      const before = game.piece
+        ? { type: game.piece.type, state: game.piece.state, x: game.piece.x, y: game.piece.y }
+        : null;
+      const stepEvents = [];
+      runStep(game, lesson.steps[i], stepEvents);
+
+      for (let e = 0; e < stepEvents.length; e++) {
+        if (stepEvents[e].type === 'rotate' && before) {
+          // A step could in principle rotate and then lock, leaving no
+          // active piece to read the landing position from.
+          const landed = game.piece || before;
+          rotations.push({
+            step: i,
+            from: before,
+            to: { type: landed.type, state: stepEvents[e].state, x: landed.x, y: landed.y },
+            kickIndex: stepEvents[e].kickIndex
+          });
+        }
+      }
+
+      collect(events, stepEvents);
+      stepsRun += 1;
+    }
+
+    return { game: game, events: events, rotations: rotations, stepsRun: stepsRun };
+  }
+
+  // The player: a thin shell over runLesson. All the state it keeps is
+  // "which lesson, which step"; the board for that step is recomputed by
+  // replaying, so stepping backwards is exact.
+  function create(elements) {
+    const overlay = elements.overlay;
+    const renderer = Renderer.create(elements.canvas);
+
+    let lesson = LESSONS[0];
+    let step = 0;
+    let state = null;
+    let playing = false;
+    let speed = 1;
+    let waitMs = 0;
+    let rafId = null;
+    let lastMs = 0;
+
+    function renderReference() {
+      const host = elements.reference;
+      host.textContent = '';
+
+      const groups = [
+        { name: 'J, L, S, T, Z', table: SRS.KICKS_JLSTZ, dedupe: false },
+        { name: 'I', table: SRS.KICKS_I, dedupe: false },
+        { name: '180°, all pieces', table: SRS.KICKS_180, dedupe: true }
+      ];
+
+      for (const group of groups) {
+        const title = document.createElement('h3');
+        title.textContent = group.name;
+        host.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'kick-rows';
+        const seen = {};
+        for (const key of Object.keys(group.table)) {
+          const text = group.table[key].map(function (o) {
+            return '(' + o[0] + ',' + o[1] + ')';
+          }).join('  ');
+          // The 180 table shares one list across all four transitions.
+          if (group.dedupe && seen[text]) continue;
+          seen[text] = true;
+
+          const row = document.createElement('div');
+          row.className = 'kick-row';
+          const label = document.createElement('b');
+          label.textContent = group.dedupe ? 'any' : key.replace('>', ' → ');
+          const value = document.createElement('span');
+          value.textContent = text;
+          row.appendChild(label);
+          row.appendChild(value);
+          list.appendChild(row);
+        }
+        host.appendChild(list);
+      }
+    }
+
+    function rebuild() {
+      state = runLesson(lesson, step);
+      elements.title.textContent = lesson.title;
+      elements.caption.textContent = lesson.reference
+        ? lesson.steps[0].caption
+        : (step === 0 ? lesson.blurb : lesson.steps[step - 1].caption);
+      elements.progress.textContent = lesson.reference
+        ? ''
+        : step + ' / ' + lesson.steps.length;
+      elements.reference.hidden = !lesson.reference;
+      elements.canvas.hidden = lesson.reference === true;
+      if (lesson.reference) renderReference();
+    }
+
+    function renderList() {
+      elements.list.textContent = '';
+      for (const entry of LESSONS) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = entry.title;
+        button.className = entry.id === lesson.id ? 'active' : '';
+        button.addEventListener('click', function () { select(entry.id); });
+        elements.list.appendChild(button);
+      }
+    }
+
+    function select(id) {
+      const found = lessonById(id);
+      if (!found) return;
+      lesson = found;
+      step = 0;
+      playing = false;
+      waitMs = 0;
+      renderList();
+      rebuild();
+    }
+
+    function stepForward() {
+      if (lesson.reference || step >= lesson.steps.length) {
+        playing = false;
+        return;
+      }
+      step += 1;
+      rebuild();
+    }
+
+    function stepBack() {
+      if (lesson.reference || step === 0) return;
+      step -= 1;
+      playing = false;
+      rebuild();
+    }
+
+    function replay() {
+      step = 0;
+      waitMs = 0;
+      rebuild();
+      playing = !lesson.reference;
+    }
+
+    // Names the offset that fired, whenever the step just shown used one
+    // other than the no-op first offset.
+    function showKickLabel() {
+      elements.kick.hidden = true;
+      if (!state || state.rotations.length === 0) return;
+      const last = state.rotations[state.rotations.length - 1];
+      if (last.step !== step - 1 || last.kickIndex === 0) return;
+      elements.kick.textContent = 'kick offset ' + (last.kickIndex + 1) + ' of 5';
+      elements.kick.hidden = false;
+    }
+
+    function frame(nowMs) {
+      const dt = lastMs === 0 ? 0 : nowMs - lastMs;
+      lastMs = nowMs;
+
+      if (playing) {
+        waitMs += dt;
+        if (waitMs >= 1400 / speed) {
+          waitMs = 0;
+          stepForward();
+        }
+      }
+
+      if (state && !lesson.reference) {
+        renderer.draw({ game: state.game, paused: true, dtMs: dt, panels: false });
+        showKickLabel();
+      }
+      rafId = root.requestAnimationFrame(frame);
+    }
+
+    function open() {
+      overlay.hidden = false;
+      renderer.resize();
+      select(lesson.id);
+      lastMs = 0;
+      if (rafId === null) rafId = root.requestAnimationFrame(frame);
+    }
+
+    function close() {
+      overlay.hidden = true;
+      playing = false;
+      if (rafId !== null) {
+        root.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    elements.play.addEventListener('click', function () { playing = !playing; waitMs = 0; });
+    elements.next.addEventListener('click', function () { playing = false; stepForward(); });
+    elements.prev.addEventListener('click', stepBack);
+    elements.replayButton.addEventListener('click', replay);
+    elements.close.addEventListener('click', close);
+    elements.speed.addEventListener('change', function (event) {
+      speed = Number(event.target.value) || 1;
+    });
+
+    return {
+      open: open,
+      close: close,
+      select: select,
+      play: function () { playing = true; },
+      pause: function () { playing = false; },
+      stepForward: stepForward,
+      stepBack: stepBack,
+      replay: replay,
+      setSpeed: function (value) { speed = Number(value) || 1; },
+      currentStep: function () { return step; },
+      currentLessonId: function () { return lesson.id; }
+    };
+  }
+
+  root.SpinGuide = {
+    TICK_MS: TICK_MS,
+    SPEEDS: SPEEDS,
+    LESSONS: LESSONS,
+    lessonById: lessonById,
+    runLesson: runLesson,
+    create: create
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
