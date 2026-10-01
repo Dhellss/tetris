@@ -23,8 +23,17 @@
 
   const PLAIN_NAMES = ['none', 'single', 'double', 'triple', 'tetris'];
 
-  function create() {
-    return { score: 0, lines: 0, level: 1, chain: 0, b2b: false };
+  // `fixedLevel` pins the level at 1 for modes that are raced rather than
+  // survived, so neither the gravity nor the score multiplier climbs.
+  function create(options) {
+    return {
+      score: 0,
+      lines: 0,
+      level: 1,
+      chain: 0,
+      b2b: false,
+      fixedLevel: !!(options && options.fixedLevel)
+    };
   }
 
   function kindFor(lines, spin) {
@@ -87,7 +96,7 @@
 
     const levelBefore = state.level;
     state.lines += lines;
-    state.level = levelForLines(state.lines);
+    if (!state.fixedLevel) state.level = levelForLines(state.lines);
     state.score += points;
 
     return {

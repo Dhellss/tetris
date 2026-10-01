@@ -557,6 +557,15 @@
       assertEqual(tenth.leveledUp, true);
     });
 
+    it('can be pinned to level 1, for a mode that does not speed up', function () {
+      const st = Scoring.create({ fixedLevel: true });
+      for (let i = 0; i < 6; i++) {
+        Scoring.applyLock(st, { lines: 4, spin: 'none', perfectClear: false });
+      }
+      assertEqual(st.lines, 24);
+      assertEqual(st.level, 1, 'a pinned scoring state raised its level');
+    });
+
     it('awards drop points without the level multiplier', function () {
       const st = Scoring.create();
       st.level = 9;
@@ -736,6 +745,25 @@
       assertEqual(g.piece.type, 'T', 'the piece never locked after the budget ran out');
     });
 
+    it('locks a piece that is being spun on the spot', function () {
+      // Four clockwise rotations on a flat floor walk the T up one row via
+      // its kicks and leave it airborne. If an airborne rotation resets the
+      // lock timer for free, a player tapping rotate suspends the piece for
+      // as long as they like.
+      const g = gameWith({ pieces: ['T', 'I'] });
+      dropToFloor(g);
+
+      // Every fourth frame is about 15 rotations a second — a held key, or
+      // ordinary mashing.
+      let elapsed = 0;
+      for (let f = 0; f < 1200 && g.piece.type === 'T'; f++) {
+        Game.tick(g, 16, f % 4 === 0 ? { rotateCW: true } : NOTHING);
+        elapsed += 16;
+      }
+      assertEqual(g.piece.type, 'I', 'the T never locked after ' + elapsed + 'ms of spinning');
+      assert(elapsed < 4000, 'the T floated for ' + elapsed + 'ms before locking');
+    });
+
     it('holds a piece, swaps it back, and allows only one hold per piece', function () {
       const g = gameWith({ pieces: ['T', 'I', 'O'] });
       Game.tick(g, 16, { hold: true });
@@ -817,6 +845,24 @@
       assertDeepEqual(lock.rows, [38, 39]);
     });
 
+    it('awards nothing for a T-slot entered with a 180 rotation', function () {
+      // Spec, Rotation: "A 180 rotation never awards a T-spin." Without
+      // this, flipping into a slot pays the full T-spin rate and arms
+      // back-to-back, for a clear that should score as a plain single.
+      const g = gameWith({ pieces: ['T'], board: tsdBoard() });
+      Game.tick(g, 16, { rotateCCW: true });   // 0 -> L
+      dropToFloor(g);
+      const flipped = Game.tick(g, 16, { rotate180: true });   // L -> R
+      assert(flipped.some(e => e.type === 'rotate'), 'the 180 was rejected');
+      assertEqual(g.piece.state, 'R');
+
+      const lock = untilLock(g).filter(e => e.type === 'lock')[0];
+      assert(lock, 'the T never locked');
+      assertEqual(lock.spin, 'none', 'a 180 flip was paid as a spin');
+      assertEqual(lock.kind, 'single');
+      assertEqual(g.scoring.b2b, false, 'a 180 flip armed back-to-back');
+    });
+
     it('keeps the spin when a hard drop moves the piece zero cells', function () {
       const g = gameWith({ pieces: ['T'], board: tsdBoard() });
       Game.tick(g, 16, { rotateCCW: true });
@@ -854,6 +900,19 @@
       const win = events.filter(e => e.type === 'win')[0];
       assert(win, 'no win event');
       assertEqual(win.lines, 1);
+    });
+
+    it('keeps a sprint at level 1 all the way to the goal', function () {
+      // Spec: "Sprint stays at level 1 and ends at 40 lines." A climbing
+      // level would inflate every clear's score and the HUD with it.
+      const g = gameWith({ mode: 'sprint', pieces: ['I'], sprintLines: 40 });
+      for (let i = 0; i < 12 && g.status === 'playing'; i++) {
+        g.board = Board.fromRows(['XXX....XXX']);
+        g.piece = { type: 'I', state: '0', x: 3, y: 30 };
+        Game.tick(g, 16, { hardDrop: true });
+      }
+      assert(g.scoring.lines >= 10, 'the run did not clear enough lines to level up');
+      assertEqual(g.scoring.level, 1, 'sprint reached level ' + g.scoring.level);
     });
 
     it('ignores input once the game is over', function () {

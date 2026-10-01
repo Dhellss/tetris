@@ -176,8 +176,8 @@ a rotation. Then, of the four cells diagonally adjacent to the T's
 center, count those that are occupied or out of bounds:
 
 - fewer than 3 occupied: no spin
-- 3 or more occupied, and both cells in front of the T's flat edge are
-  among them: **T-spin**
+- 3 or more occupied, and both cells on the side the T's nub points
+  towards are among them: **T-spin**
 - 3 or more occupied but only one front cell: **mini T-spin**, upgraded
   to a full T-spin if the rotation used the fifth kick offset (the one
   that makes a T-spin Triple possible)

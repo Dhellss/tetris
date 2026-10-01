@@ -96,7 +96,11 @@
       const result = {
         score: game.scoring.score,
         lines: game.scoring.lines,
-        timeMs: game.timeMs
+        timeMs: game.timeMs,
+        // Marathon ends by topping out, so reaching the end IS the result.
+        // A sprint only counts if it reached its line goal — otherwise a
+        // quick death would rank as the fastest time ever set.
+        completed: event.type === 'win' || game.mode === 'marathon'
       };
       const outcome = Bests.record(root.localStorage, game.mode, result);
       showGameOver(event, result, outcome.updated);
@@ -113,6 +117,12 @@
     // pause screen is the exception: Esc there resumes.
     const screen = screens.current();
     if (screen !== null && screen !== 'pause') {
+      // Retry is the key a player reaches for the instant they top out, so
+      // it has to work on the game-over screen and not only in play.
+      if (screen === 'over' && actions.retry) {
+        screens.hide();
+        newGame(game.mode);
+      }
       renderer.draw({ game: game, paused: true, dtMs: dt });
       root.requestAnimationFrame(frame);
       return;

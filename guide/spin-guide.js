@@ -137,6 +137,17 @@
     return null;
   }
 
+  // How far the kick moved the piece away from where the rotation would
+  // nominally have landed. null when the first offset fit, since then
+  // there is no kick to point at.
+  function kickDisplacement(rotation) {
+    if (!rotation || rotation.kickIndex === 0) return null;
+    return {
+      dx: rotation.to.x - rotation.from.x,
+      dy: rotation.to.y - rotation.from.y
+    };
+  }
+
   function collect(into, batch) {
     for (let i = 0; i < batch.length; i++) into.push(batch[i]);
   }
@@ -333,15 +344,95 @@
       playing = !lesson.reference;
     }
 
-    // Names the offset that fired, whenever the step just shown used one
-    // other than the no-op first offset.
-    function showKickLabel() {
+    // The centre of a piece's four cells, in canvas pixels.
+    function centreOf(piece, l) {
+      const cells = Pieces.cells(piece.type, piece.state);
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < cells.length; i++) {
+        sx += piece.x + cells[i].x + 0.5;
+        sy += piece.y + cells[i].y + 0.5;
+      }
+      const top = Board.ROWS - Board.VISIBLE_ROWS;
+      return {
+        x: l.boardX + (sx / cells.length) * l.cell,
+        y: l.pad + (sy / cells.length - top) * l.cell
+      };
+    }
+
+    function outlineCells(ctx, piece, l) {
+      const cells = Pieces.cells(piece.type, piece.state);
+      const top = Board.ROWS - Board.VISIBLE_ROWS;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(255, 217, 138, 0.75)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < cells.length; i++) {
+        const row = piece.y + cells[i].y - top;
+        if (row < 0 || row >= Board.VISIBLE_ROWS) continue;
+        ctx.strokeRect(
+          l.boardX + (piece.x + cells[i].x) * l.cell + 1,
+          l.pad + row * l.cell + 1,
+          l.cell - 2,
+          l.cell - 2
+        );
+      }
+      ctx.setLineDash([]);
+    }
+
+    // Shows where the rotation would have landed had the first offset fit,
+    // and an arrow to where the kick actually put the piece. This is the
+    // whole point of the guide: the motion, not just the caption.
+    function drawKick() {
       elements.kick.hidden = true;
       if (!state || state.rotations.length === 0) return;
       const last = state.rotations[state.rotations.length - 1];
-      if (last.step !== step - 1 || last.kickIndex === 0) return;
-      elements.kick.textContent = 'kick offset ' + (last.kickIndex + 1) + ' of 5';
+      if (last.step !== step - 1) return;
+      const shift = kickDisplacement(last);
+      if (!shift) return;
+
+      elements.kick.textContent =
+        'kick offset ' + (last.kickIndex + 1) + ' of 5  ·  ' +
+        (shift.dx === 0 ? '' : (shift.dx > 0 ? shift.dx + ' right' : (-shift.dx) + ' left')) +
+        (shift.dx !== 0 && shift.dy !== 0 ? ', ' : '') +
+        (shift.dy === 0 ? '' : (shift.dy > 0 ? shift.dy + ' down' : (-shift.dy) + ' up'));
       elements.kick.hidden = false;
+
+      const l = renderer.layout;
+      const ctx = elements.canvas.getContext('2d');
+      const nominal = {
+        type: last.to.type, state: last.to.state, x: last.from.x, y: last.from.y
+      };
+      outlineCells(ctx, nominal, l);
+
+      const a = centreOf(nominal, l);
+      const b = centreOf(last.to, l);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 1) return;
+
+      // Stop the arrow short of the piece centre so the head is visible
+      // against the block rather than buried in it.
+      const ux = dx / length;
+      const uy = dy / length;
+      const tipX = b.x - ux * l.cell * 0.35;
+      const tipY = b.y - uy * l.cell * 0.35;
+
+      ctx.strokeStyle = '#ffd98a';
+      ctx.fillStyle = '#ffd98a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+
+      const head = Math.max(5, l.cell * 0.32);
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - ux * head - uy * head * 0.5, tipY - uy * head + ux * head * 0.5);
+      ctx.lineTo(tipX - ux * head + uy * head * 0.5, tipY - uy * head - ux * head * 0.5);
+      ctx.closePath();
+      ctx.fill();
     }
 
     function frame(nowMs) {
@@ -358,7 +449,7 @@
 
       if (state && !lesson.reference) {
         renderer.draw({ game: state.game, paused: true, dtMs: dt, panels: false });
-        showKickLabel();
+        drawKick();
       }
       rafId = root.requestAnimationFrame(frame);
     }
@@ -410,6 +501,7 @@
     LESSONS: LESSONS,
     lessonById: lessonById,
     runLesson: runLesson,
+    kickDisplacement: kickDisplacement,
     create: create
   };
 })(typeof window !== 'undefined' ? window : globalThis);

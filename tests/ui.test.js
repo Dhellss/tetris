@@ -411,8 +411,9 @@
     }
 
     it('prefers a faster sprint', function () {
-      assertEqual(Bests.isBetter('sprint', { timeMs: 38000 }, { timeMs: 42000 }), true);
-      assertEqual(Bests.isBetter('sprint', { timeMs: 50000 }, { timeMs: 42000 }), false);
+      const done = function (ms) { return { timeMs: ms, completed: true }; };
+      assertEqual(Bests.isBetter('sprint', done(38000), done(42000)), true);
+      assertEqual(Bests.isBetter('sprint', done(50000), done(42000)), false);
     });
 
     it('prefers a higher marathon score', function () {
@@ -420,8 +421,8 @@
       assertEqual(Bests.isBetter('marathon', { score: 100 }, { score: 4000 }), false);
     });
 
-    it('accepts any result when there is no record yet', function () {
-      assertEqual(Bests.isBetter('sprint', { timeMs: 99999 }, null), true);
+    it('accepts any valid result when there is no record yet', function () {
+      assertEqual(Bests.isBetter('sprint', { timeMs: 99999, completed: true }, null), true);
       assertEqual(Bests.isBetter('marathon', { score: 0 }, null), true);
     });
 
@@ -443,22 +444,54 @@
 
     it('records a first result and then only improvements', function () {
       const storage = storageWith();
-      const first = Bests.record(storage, 'sprint', { timeMs: 45000, lines: 40 });
+      const first = Bests.record(storage, 'sprint', { timeMs: 45000, lines: 40, completed: true });
       assertEqual(first.updated, true);
 
-      const worse = Bests.record(storage, 'sprint', { timeMs: 51000, lines: 40 });
+      const worse = Bests.record(storage, 'sprint', { timeMs: 51000, lines: 40, completed: true });
       assertEqual(worse.updated, false);
       assertEqual(worse.best.timeMs, 45000);
 
-      const better = Bests.record(storage, 'sprint', { timeMs: 39000, lines: 40 });
+      const better = Bests.record(storage, 'sprint', { timeMs: 39000, lines: 40, completed: true });
       assertEqual(better.updated, true);
       assertEqual(Bests.load(storage).sprint.timeMs, 39000);
     });
 
+    it('refuses a sprint that never reached its goal', function () {
+      // Sprint ranks on time ascending, so topping out after eight seconds
+      // would otherwise beat a real forty-line run and could never be
+      // bettered except by dying faster.
+      assertEqual(Bests.isValidBest('sprint', { timeMs: 30000, completed: true }), true);
+      assertEqual(Bests.isValidBest('sprint', { timeMs: 8000, completed: false }), false);
+
+      const storage = storageWith();
+      Bests.record(storage, 'sprint', { timeMs: 42000, lines: 40, completed: true });
+      const death = Bests.record(storage, 'sprint', { timeMs: 8000, lines: 2, completed: false });
+      assertEqual(death.updated, false, 'a top-out was recorded as a sprint best');
+      assertEqual(Bests.load(storage).sprint.timeMs, 42000);
+    });
+
+    it('rejects a record whose ranked field is not a number', function () {
+      assertEqual(Bests.isValidBest('sprint', { timeMs: 'fast', completed: true }), false);
+      assertEqual(Bests.isValidBest('marathon', { score: 'lots', completed: true }), false);
+      assertEqual(Bests.isValidBest('marathon', { score: 0, completed: true }), true);
+    });
+
+    it('lets a real result replace a corrupt stored one', function () {
+      // A hand edit or a half-finished write must not freeze the record
+      // forever, nor paint its raw contents into the menu.
+      const storage = storageWith('{"sprint":{"timeMs":"fast"},"marathon":{"score":"lots"}}');
+      assertEqual(Bests.load(storage).sprint, null, 'a junk sprint record survived load');
+      assertEqual(Bests.load(storage).marathon, null, 'a junk marathon record survived load');
+
+      const fresh = Bests.record(storage, 'sprint', { timeMs: 30000, lines: 40, completed: true });
+      assertEqual(fresh.updated, true, 'a real result could not beat a junk one');
+      assertEqual(Bests.load(storage).sprint.timeMs, 30000);
+    });
+
     it('keeps the two modes apart', function () {
       const storage = storageWith();
-      Bests.record(storage, 'sprint', { timeMs: 45000 });
-      Bests.record(storage, 'marathon', { score: 12000 });
+      Bests.record(storage, 'sprint', { timeMs: 45000, completed: true });
+      Bests.record(storage, 'marathon', { score: 12000, completed: true });
       const bests = Bests.load(storage);
       assertEqual(bests.sprint.timeMs, 45000);
       assertEqual(bests.marathon.score, 12000);
@@ -550,6 +583,23 @@
       const lesson = SpinGuide.lessonById('kick-table');
       assertEqual(lesson.reference, true);
       assertEqual(SpinGuide.runLesson(lesson), null, 'a reference lesson should not be runnable');
+    });
+
+    it('measures how far a kick displaced the piece', function () {
+      // The guide draws an arrow from where the rotation would nominally
+      // have landed to where the kick actually put it, so it needs the
+      // displacement, not just the offset index.
+      const triple = SpinGuide.runLesson(SpinGuide.lessonById('tspin-triple'));
+      const kicked = triple.rotations[triple.rotations.length - 1];
+      assertEqual(kicked.kickIndex, 4);
+      assertDeepEqual(SpinGuide.kickDisplacement(kicked), { dx: -1, dy: 2 },
+        'the deep kick moves one column left and two rows down');
+
+      const plain = SpinGuide.runLesson(SpinGuide.lessonById('tspin-double'));
+      const unkicked = plain.rotations[plain.rotations.length - 1];
+      assertEqual(unkicked.kickIndex, 0);
+      assertEqual(SpinGuide.kickDisplacement(unkicked), null,
+        'a rotation that did not kick has nothing to point at');
     });
 
     it('replays only as far as the step asked for', function () {

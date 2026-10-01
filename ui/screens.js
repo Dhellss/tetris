@@ -54,6 +54,9 @@
     let capturing = null;   // the action waiting for a key
 
     function show(name) {
+      // Leaving a half-finished rebind armed would make the next key press
+      // anywhere in the game rebind that action, silently.
+      capturing = null;
       currentName = name;
       overlay.hidden = name === null;
       for (const key of SCREENS) panels[key].hidden = key !== name;
@@ -110,7 +113,7 @@
     // While capturing, the next key press becomes the only binding for
     // that action. Escape cancels instead of binding.
     function onCaptureKey(event) {
-      if (capturing === null) return;
+      if (capturing === null || currentName !== 'settings') return;
       event.preventDefault();
       event.stopPropagation();
 

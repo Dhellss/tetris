@@ -71,7 +71,7 @@
       piece: null,
       hold: null,
       canHold: true,
-      scoring: Scoring.create(),
+      scoring: Scoring.create({ fixedLevel: opts.mode === 'sprint' }),
       status: 'playing',
       gravityMs: 0,
       lockMs: 0,
@@ -117,16 +117,14 @@
     return true;
   }
 
-  // Called after any successful move or rotation. Spends one unit of the
-  // reset budget while grounded; airborne, the timer is simply irrelevant.
+  // Called after any successful move or rotation. Every one of them spends
+  // a unit of the reset budget, grounded or not: a kick can lift a resting
+  // piece clear of its surface, and only charging for the grounded ones
+  // would let a player suspend a piece indefinitely by spinning it.
   function noteAction(g, wasRotation) {
     g.rotatedLast = wasRotation;
-    if (isGrounded(g)) {
-      if (g.resets < g.opts.maxResets) {
-        g.resets += 1;
-        g.lockMs = 0;
-      }
-    } else {
+    if (g.resets < g.opts.maxResets) {
+      g.resets += 1;
       g.lockMs = 0;
     }
   }
@@ -218,7 +216,9 @@
       if (spun) {
         g.piece = spun.piece;
         g.lastKickIndex = spun.kickIndex;
-        noteAction(g, true);
+        // A half-turn still resets the lock delay, but it never counts as
+        // the rotation that earns a spin.
+        noteAction(g, dir !== 2);
         events.push({ type: 'rotate', kickIndex: spun.kickIndex, state: g.piece.state });
       }
     }
@@ -252,8 +252,7 @@
       return events;
     }
 
-    const level = g.mode === 'sprint' ? 1 : g.scoring.level;
-    let intervalMs = Scoring.gravityMs(level);
+    let intervalMs = Scoring.gravityMs(g.scoring.level);
     if (a.softDrop) intervalMs = Math.min(intervalMs, g.opts.softDropMs);
 
     g.gravityMs += dt;
@@ -278,7 +277,10 @@
     if (g.grounded) {
       g.lockMs += dt;
       if (g.lockMs >= g.opts.lockDelayMs) lockPiece(g, events);
-    } else {
+    } else if (g.resets < g.opts.maxResets) {
+      // A piece that is genuinely falling starts its lock delay afresh when
+      // it lands. Once the budget is gone the elapsed time is carried over
+      // instead, so the piece locks on its next contact as the spec says.
       g.lockMs = 0;
     }
 
