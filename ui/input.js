@@ -66,6 +66,8 @@
     let kept = 0;
     for (const code of Object.keys(raw)) {
       const action = raw[code];
+      // An empty code binds an action to a key nobody can press.
+      if (code === '') continue;
       if (typeof action === 'string' && ACTIONS.indexOf(action) !== -1) {
         out[code] = action;
         kept += 1;

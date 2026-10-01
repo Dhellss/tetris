@@ -29,6 +29,48 @@
     <div id="hud-balance" aria-hidden="true"></div>
   </main>
 
+  <div id="overlay" class="overlay" hidden>
+    <section id="screen-menu" class="panel" hidden>
+      <h1>TETRIS</h1>
+      <button type="button" data-action="marathon">Marathon</button>
+      <button type="button" data-action="sprint">Sprint 40L</button>
+      <button type="button" data-action="guide">Spin Guide</button>
+      <button type="button" data-action="settings">Settings</button>
+      <p class="bests">
+        <span>Marathon best: <b id="best-marathon">—</b></span>
+        <span>Sprint best: <b id="best-sprint">—</b></span>
+      </p>
+      <p class="hint">Arrows move · Z / X rotate · A flips · Space drops · C holds · Esc pauses</p>
+    </section>
+
+    <section id="screen-pause" class="panel" hidden>
+      <h2>Paused</h2>
+      <button type="button" data-action="resume">Resume</button>
+      <button type="button" data-action="restart">Restart</button>
+      <button type="button" data-action="menu">Main menu</button>
+    </section>
+
+    <section id="screen-over" class="panel" hidden>
+      <h2 id="over-title">Game over</h2>
+      <p id="over-detail"></p>
+      <p id="over-best" class="best-note" hidden>New personal best</p>
+      <button type="button" data-action="restart">Play again</button>
+      <button type="button" data-action="menu">Main menu</button>
+    </section>
+
+    <section id="screen-settings" class="panel wide" hidden>
+      <h2>Settings</h2>
+      <div class="handling">
+        <label>DAS <input id="set-das" type="range" min="0" max="300" step="5" /> <output id="out-das"></output></label>
+        <label>ARR <input id="set-arr" type="range" min="0" max="100" step="1" /> <output id="out-arr"></output></label>
+        <label>Soft drop <input id="set-sdf" type="range" min="1" max="60" step="1" /> <output id="out-sdf"></output></label>
+      </div>
+      <div id="binding-list" class="bindings"></div>
+      <button type="button" data-action="reset-settings">Reset to defaults</button>
+      <button type="button" data-action="menu">Back</button>
+    </section>
+  </div>
+
   <noscript>
     <p class="fallback">This game needs JavaScript enabled to run.</p>
   </noscript>
@@ -42,7 +84,9 @@
   <script src="ui/renderer.js"></script>
   <script src="ui/input.js"></script>
   <script src="ui/hud.js"></script>
-  <!-- later tasks add screens.js and spin-guide.js here -->
+  <script src="ui/bests.js"></script>
+  <script src="ui/screens.js"></script>
+  <!-- the spin guide arrives in the next task -->
   <script src="main.js"></script>
 </body>
 </html>

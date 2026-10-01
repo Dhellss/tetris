@@ -236,6 +236,15 @@
       assertEqual(b.KeyK, undefined);
     });
 
+    it('drops a binding whose key code is empty', function () {
+      // Some virtual keyboards and automation layers deliver keydown with
+      // no `code`. Storing one would bind an action to a key nobody can
+      // press, and the action would be unreachable until a settings reset.
+      const b = Input.sanitizeBindings({ '': 'left', KeyJ: 'right' });
+      assertEqual(b[''], undefined, 'an empty key code was stored');
+      assertEqual(b.KeyJ, 'right');
+    });
+
     it('falls back to the defaults when no binding survives', function () {
       const b = Input.sanitizeBindings({ KeyK: 'selfDestruct' });
       assertEqual(b.ArrowLeft, 'left', 'an unusable binding map left the game unplayable');
@@ -387,6 +396,72 @@
     it('tolerates a missing list or delta', function () {
       assertDeepEqual(Renderer.advanceEffects(null, 16), []);
       assertDeepEqual(Renderer.advanceEffects([{ kind: 'flash', ageMs: 0, lifeMs: 100 }], undefined).length, 1);
+    });
+  });
+
+  describe('Bests', function () {
+    function storageWith(value) {
+      const data = {};
+      if (value !== undefined) data[Bests.KEY] = value;
+      return {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+        setItem: function (k, v) { data[k] = String(v); },
+        data: data
+      };
+    }
+
+    it('prefers a faster sprint', function () {
+      assertEqual(Bests.isBetter('sprint', { timeMs: 38000 }, { timeMs: 42000 }), true);
+      assertEqual(Bests.isBetter('sprint', { timeMs: 50000 }, { timeMs: 42000 }), false);
+    });
+
+    it('prefers a higher marathon score', function () {
+      assertEqual(Bests.isBetter('marathon', { score: 9000 }, { score: 4000 }), true);
+      assertEqual(Bests.isBetter('marathon', { score: 100 }, { score: 4000 }), false);
+    });
+
+    it('accepts any result when there is no record yet', function () {
+      assertEqual(Bests.isBetter('sprint', { timeMs: 99999 }, null), true);
+      assertEqual(Bests.isBetter('marathon', { score: 0 }, null), true);
+    });
+
+    it('starts with no records', function () {
+      const bests = Bests.load(storageWith());
+      assertEqual(bests.marathon, null);
+      assertEqual(bests.sprint, null);
+    });
+
+    it('ignores a corrupt record', function () {
+      const bests = Bests.load(storageWith('}}not json'));
+      assertEqual(bests.sprint, null);
+    });
+
+    it('ignores a record of the wrong shape', function () {
+      const bests = Bests.load(storageWith('{"sprint":"very fast"}'));
+      assertEqual(bests.sprint, null, 'a string survived as a sprint record');
+    });
+
+    it('records a first result and then only improvements', function () {
+      const storage = storageWith();
+      const first = Bests.record(storage, 'sprint', { timeMs: 45000, lines: 40 });
+      assertEqual(first.updated, true);
+
+      const worse = Bests.record(storage, 'sprint', { timeMs: 51000, lines: 40 });
+      assertEqual(worse.updated, false);
+      assertEqual(worse.best.timeMs, 45000);
+
+      const better = Bests.record(storage, 'sprint', { timeMs: 39000, lines: 40 });
+      assertEqual(better.updated, true);
+      assertEqual(Bests.load(storage).sprint.timeMs, 39000);
+    });
+
+    it('keeps the two modes apart', function () {
+      const storage = storageWith();
+      Bests.record(storage, 'sprint', { timeMs: 45000 });
+      Bests.record(storage, 'marathon', { score: 12000 });
+      const bests = Bests.load(storage);
+      assertEqual(bests.sprint.timeMs, 45000);
+      assertEqual(bests.marathon.score, 12000);
     });
   });
 })();
