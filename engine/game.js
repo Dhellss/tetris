@@ -247,7 +247,7 @@
         Scoring.addDropPoints(g.scoring, distance, true);
         g.rotatedLast = false;
       }
-      events.push({ type: 'harddrop', cells: distance });
+      events.push({ type: 'harddrop', cells: distance, piece: copyPiece(g.piece) });
       lockPiece(g, events);
       return events;
     }

@@ -3,6 +3,7 @@
 
   const canvas = document.getElementById('board');
   const renderer = Renderer.create(canvas);
+  const hud = Hud.create(document.getElementById('stage'));
   const settings = Input.loadSettings(root.localStorage);
   const input = Input.createState(settings);
 
@@ -54,9 +55,18 @@
     }
 
     if (!paused && game.status === 'playing') {
-      emit(Game.tick(game, dt, actions));
+      const events = Game.tick(game, dt, actions);
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+        if (event.type === 'harddrop' && event.cells > 0 && event.piece) {
+          renderer.addTrail(event.piece, event.piece.y - event.cells, event.piece.y);
+        }
+        if (event.type === 'lock' && event.lines > 0) renderer.addFlash(event.rows);
+      }
+      emit(events);
     }
 
+    hud.update(game);
     renderer.draw({ game: game, paused: paused, dtMs: dt });
     root.requestAnimationFrame(frame);
   }
@@ -87,4 +97,6 @@
     getRenderer: function () { return renderer; },
     onEvents: function (handler) { listeners.push(handler); }
   };
+
+  root.App.onEvents(function (events) { hud.apply(events); });
 })(window);

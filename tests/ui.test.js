@@ -307,4 +307,86 @@
       assertEqual(l.nextX, l.boardX + l.boardW + l.gap);
     });
   });
+
+  describe('Hud formatting', function () {
+    it('formats a clock as minutes, seconds, and hundredths', function () {
+      assertEqual(Hud.formatTime(0), '0:00.00');
+      assertEqual(Hud.formatTime(1234), '0:01.23');
+      assertEqual(Hud.formatTime(61500), '1:01.50');
+      assertEqual(Hud.formatTime(600000), '10:00.00');
+    });
+
+    it('treats a missing or negative clock as zero', function () {
+      assertEqual(Hud.formatTime(-5), '0:00.00');
+      assertEqual(Hud.formatTime(NaN), '0:00.00');
+      assertEqual(Hud.formatTime(undefined), '0:00.00');
+    });
+
+    it('formats pieces per second, without dividing by zero', function () {
+      assertEqual(Hud.formatPps(0, 0), '0.0');
+      assertEqual(Hud.formatPps(10, 0), '0.0');
+      assertEqual(Hud.formatPps(20, 10000), '2.0');
+      assertEqual(Hud.formatPps(7, 2000), '3.5');
+    });
+  });
+
+  describe('Hud.popupsFor', function () {
+    it('says nothing for a lock that cleared nothing', function () {
+      assertDeepEqual(Hud.popupsFor({ kind: 'none', lines: 0, chain: 0, b2b: false, perfectClear: false }), []);
+    });
+
+    it('says nothing for a plain single', function () {
+      assertDeepEqual(Hud.popupsFor({ kind: 'single', lines: 1, chain: 1, b2b: false, perfectClear: false }), []);
+    });
+
+    it('announces a tetris', function () {
+      assertDeepEqual(Hud.popupsFor({ kind: 'tetris', lines: 4, chain: 1, b2b: false, perfectClear: false }), ['TETRIS']);
+    });
+
+    it('names each T-spin', function () {
+      assertEqual(Hud.popupsFor({ kind: 'tspin', lines: 0, chain: 0 })[0], 'T-SPIN');
+      assertEqual(Hud.popupsFor({ kind: 'tspin-single', lines: 1, chain: 1 })[0], 'T-SPIN SINGLE');
+      assertEqual(Hud.popupsFor({ kind: 'tspin-double', lines: 2, chain: 1 })[0], 'T-SPIN DOUBLE');
+      assertEqual(Hud.popupsFor({ kind: 'tspin-triple', lines: 3, chain: 1 })[0], 'T-SPIN TRIPLE');
+      assertEqual(Hud.popupsFor({ kind: 'mini', lines: 0, chain: 0 })[0], 'MINI T-SPIN');
+      assertEqual(Hud.popupsFor({ kind: 'mini-single', lines: 1, chain: 1 })[0], 'MINI T-SPIN SINGLE');
+    });
+
+    it('adds back-to-back, combo, and perfect clear', function () {
+      const popups = Hud.popupsFor({
+        kind: 'tetris', lines: 4, chain: 3, b2b: true, perfectClear: true
+      });
+      assertEqual(popups[0], 'TETRIS');
+      assert(popups.indexOf('BACK-TO-BACK') !== -1, 'no back-to-back popup');
+      assert(popups.indexOf('COMBO 2') !== -1, 'no combo popup, got ' + JSON.stringify(popups));
+      assert(popups.indexOf('PERFECT CLEAR') !== -1, 'no perfect clear popup');
+    });
+
+    it('stays quiet about a combo of one', function () {
+      const popups = Hud.popupsFor({ kind: 'double', lines: 2, chain: 1, b2b: false, perfectClear: false });
+      assertDeepEqual(popups, []);
+    });
+  });
+
+  describe('Renderer.advanceEffects', function () {
+    it('ages effects and drops the expired ones', function () {
+      const effects = [
+        { kind: 'flash', rows: [39], ageMs: 0, lifeMs: 200 },
+        { kind: 'trail', ageMs: 180, lifeMs: 200 }
+      ];
+      const after = Renderer.advanceEffects(effects, 50);
+      assertEqual(after.length, 1, 'the expired trail should be gone');
+      assertEqual(after[0].kind, 'flash');
+      assertEqual(after[0].ageMs, 50);
+    });
+
+    it('returns an empty list unchanged', function () {
+      assertDeepEqual(Renderer.advanceEffects([], 16), []);
+    });
+
+    it('tolerates a missing list or delta', function () {
+      assertDeepEqual(Renderer.advanceEffects(null, 16), []);
+      assertDeepEqual(Renderer.advanceEffects([{ kind: 'flash', ageMs: 0, lifeMs: 100 }], undefined).length, 1);
+    });
+  });
 })();

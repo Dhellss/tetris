@@ -56,9 +56,29 @@
     };
   }
 
+  // Effects are plain records aged by the frame delta. Keeping the ageing
+  // separate from the drawing makes it testable without a canvas.
+  function advanceEffects(effects, dtMs) {
+    if (!effects || effects.length === 0) return [];
+    const dt = Math.max(0, finiteOr(dtMs, 0));
+    const alive = [];
+    for (let i = 0; i < effects.length; i++) {
+      const effect = effects[i];
+      const aged = {};
+      for (const key of Object.keys(effect)) aged[key] = effect[key];
+      aged.ageMs = finiteOr(effect.ageMs, 0) + dt;
+      if (aged.ageMs < finiteOr(effect.lifeMs, 0)) alive.push(aged);
+    }
+    return alive;
+  }
+
   function create(canvas) {
     const ctx = canvas.getContext('2d');
     let current = layout(0, 0);
+    let effects = [];
+
+    const FLASH_MS = 180;
+    const TRAIL_MS = 220;
 
     function resize() {
       const host = canvas.parentElement;
@@ -207,14 +227,68 @@
       }
     }
 
+    function addFlash(rows) {
+      if (!rows || rows.length === 0) return;
+      effects.push({ kind: 'flash', rows: rows.slice(), ageMs: 0, lifeMs: FLASH_MS });
+    }
+
+    function addTrail(piece, fromY, toY) {
+      if (toY <= fromY) return;
+      effects.push({
+        kind: 'trail',
+        type: piece.type,
+        state: piece.state,
+        x: piece.x,
+        fromY: fromY,
+        toY: toY,
+        ageMs: 0,
+        lifeMs: TRAIL_MS
+      });
+    }
+
+    function drawEffects() {
+      const l = current;
+      const top = Board.ROWS - Board.VISIBLE_ROWS;
+
+      for (let i = 0; i < effects.length; i++) {
+        const effect = effects[i];
+        const progress = Math.min(1, effect.ageMs / effect.lifeMs);
+
+        if (effect.kind === 'flash') {
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.55 * (1 - progress)).toFixed(3) + ')';
+          for (let r = 0; r < effect.rows.length; r++) {
+            const row = effect.rows[r] - top;
+            if (row < 0 || row >= VISIBLE_ROWS) continue;
+            ctx.fillRect(l.boardX, l.pad + row * l.cell, l.boardW, l.cell);
+          }
+        } else if (effect.kind === 'trail') {
+          const cells = Pieces.cells(effect.type, effect.state);
+          ctx.fillStyle = colorFor(effect.type);
+          ctx.globalAlpha = 0.3 * (1 - progress);
+          for (let c = 0; c < cells.length; c++) {
+            const cx = effect.x + cells[c].x;
+            for (let y = effect.fromY; y < effect.toY; y++) {
+              const row = y + cells[c].y - top;
+              if (row < 0 || row >= VISIBLE_ROWS) continue;
+              ctx.fillRect(l.boardX + cx * l.cell + 2, l.pad + row * l.cell, l.cell - 4, l.cell);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
     function draw(state) {
       const game = state.game;
       const l = current;
+
+      effects = advanceEffects(effects, state.dtMs);
 
       ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, l.totalW, l.totalH);
 
       drawWell(game.board);
+      drawEffects();
       if (game.piece) {
         const ghost = Game.ghostY(game);
         if (ghost !== null && ghost !== game.piece.y) drawPiece(game.piece, ghost, true);
@@ -229,6 +303,8 @@
     return {
       resize: resize,
       draw: draw,
+      addFlash: addFlash,
+      addTrail: addTrail,
       get layout() { return current; }
     };
   }
@@ -240,6 +316,7 @@
     PANEL_CELLS: PANEL_CELLS,
     COLORS: COLORS,
     layout: layout,
+    advanceEffects: advanceEffects,
     create: create
   };
 })(typeof window !== 'undefined' ? window : globalThis);

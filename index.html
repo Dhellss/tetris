@@ -10,7 +10,23 @@
 </head>
 <body>
   <main id="stage">
-    <canvas id="board"></canvas>
+    <aside id="hud">
+      <div class="stat"><span class="label">SCORE</span><span id="stat-score" class="value">0</span></div>
+      <div class="stat"><span class="label">LEVEL</span><span id="stat-level" class="value">1</span></div>
+      <div class="stat"><span class="label">LINES</span><span id="stat-lines" class="value">0</span></div>
+      <div class="stat"><span class="label">TIME</span><span id="stat-time" class="value">0:00.00</span></div>
+      <div class="stat"><span class="label">PPS</span><span id="stat-pps" class="value">0.0</span></div>
+    </aside>
+
+    <div id="board-wrap">
+      <canvas id="board"></canvas>
+      <div id="popups"></div>
+    </div>
+
+    <!-- Balances the HUD column so the well sits on the screen's centre
+         line. The renderer measures #board-wrap, so that element has to
+         keep a width of its own rather than shrink to the canvas. -->
+    <div id="hud-balance" aria-hidden="true"></div>
   </main>
 
   <noscript>
@@ -25,7 +41,8 @@
   <script src="engine/game.js"></script>
   <script src="ui/renderer.js"></script>
   <script src="ui/input.js"></script>
-  <!-- later tasks add hud.js, screens.js, and spin-guide.js here -->
+  <script src="ui/hud.js"></script>
+  <!-- later tasks add screens.js and spin-guide.js here -->
   <script src="main.js"></script>
 </body>
 </html>
