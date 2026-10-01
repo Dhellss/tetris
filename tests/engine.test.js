@@ -137,4 +137,47 @@
       assertEqual(Board.isEmpty(b), false);
     });
   });
+
+  describe('Randomizer', function () {
+    it('deals all seven pieces in each bag of seven', function () {
+      const r = Randomizer.create(1234);
+      for (let bag = 0; bag < 20; bag++) {
+        const seen = [];
+        for (let i = 0; i < 7; i++) seen.push(r.next());
+        const sorted = seen.slice().sort();
+        assertDeepEqual(sorted, ['I', 'J', 'L', 'O', 'S', 'T', 'Z'], 'bag ' + bag);
+      }
+    });
+
+    it('reproduces the same sequence for the same seed', function () {
+      const a = Randomizer.create(99);
+      const b = Randomizer.create(99);
+      for (let i = 0; i < 30; i++) {
+        assertEqual(a.next(), b.next(), 'piece ' + i);
+      }
+    });
+
+    it('gives different sequences for different seeds', function () {
+      const a = Randomizer.create(1);
+      const b = Randomizer.create(2);
+      let same = 0;
+      for (let i = 0; i < 20; i++) {
+        if (a.next() === b.next()) same++;
+      }
+      assert(same < 20, 'two seeds produced an identical 20-piece sequence');
+    });
+
+    it('peeks without consuming', function () {
+      const r = Randomizer.create(7);
+      const peeked = r.peek(5);
+      assertEqual(peeked.length, 5);
+      for (let i = 0; i < 5; i++) {
+        assertEqual(r.next(), peeked[i], 'peek ' + i + ' matched next()');
+      }
+    });
+
+    it('defaults to seed 0 when none is given', function () {
+      assertEqual(Randomizer.create().next(), Randomizer.create(0).next());
+    });
+  });
 })();
