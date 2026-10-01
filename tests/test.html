@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Tetris engine tests</title>
+<style>
+  body { background: #0e0f15; color: #d7d9e0; font: 13px/1.5 ui-monospace, monospace; padding: 24px; }
+  .suite { margin-top: 14px; color: #8ea0ff; font-weight: 700; }
+  .pass { color: #51d88a; white-space: pre; }
+  .fail { color: #ff6b6b; white-space: pre; }
+</style>
+</head>
+<body>
+  <div id="results"></div>
+
+  <script src="harness.js"></script>
+  <script src="../engine/pieces.js"></script>
+  <script src="../engine/board.js"></script>
+  <script src="../engine/randomizer.js"></script>
+  <script src="../engine/srs.js"></script>
+  <script src="../engine/scoring.js"></script>
+  <script src="../engine/game.js"></script>
+  <script src="../ui/input.js"></script>
+  <script src="../ui/renderer.js"></script>
+  <script src="../ui/hud.js"></script>
+  <script src="../ui/bests.js"></script>
+  <script src="../guide/spin-guide.js"></script>
+  <script src="engine.test.js"></script>
+  <script src="ui.test.js"></script>
+  <script>Harness.run();</script>
+</body>
+</html>
