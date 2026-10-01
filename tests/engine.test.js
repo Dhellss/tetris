@@ -578,4 +578,292 @@
       }
     });
   });
+
+  describe('Game lifecycle', function () {
+    const NOTHING = {};
+
+    function gameWith(options) {
+      const opts = { seed: 42 };
+      for (const key of Object.keys(options || {})) opts[key] = options[key];
+      return Game.create(opts);
+    }
+
+    // Advance in 16ms frames with the same actions held down throughout.
+    // Tests that need a single pulse call Game.tick directly instead.
+    function frames(g, count, actions) {
+      let all = [];
+      for (let i = 0; i < count; i++) {
+        all = all.concat(Game.tick(g, 16, actions || NOTHING));
+      }
+      return all;
+    }
+
+    // Run until the active piece locks. A single huge tick cannot be used
+    // here: Game.tick clamps its delta, so the lock delay needs real ticks.
+    function untilLock(g) {
+      const all = [];
+      for (let i = 0; i < 100; i++) {
+        const batch = Game.tick(g, 50, NOTHING);
+        for (const e of batch) all.push(e);
+        if (batch.some(e => e.type === 'lock')) break;
+      }
+      return all;
+    }
+
+    function dropToFloor(g) {
+      let guard = 0;
+      while (!Game.isGrounded(g) && guard++ < 100) Game.tick(g, 50, { softDrop: true });
+    }
+
+    // The T-spin Double slot used throughout. The 'X' on the top row is
+    // the overhang that makes the slot reachable only by rotating into it.
+    function tsdBoard() {
+      return Board.fromRows([
+        '.....X....',
+        'XXX...XXXX',
+        'XXXX.XXXXX'
+      ]);
+    }
+
+    it('spawns a piece and fills the next queue', function () {
+      const g = gameWith({});
+      assert(g.piece !== null, 'no active piece');
+      assertEqual(g.queue.length, 5);
+      assertEqual(g.status, 'playing');
+    });
+
+    it('deals a scripted piece order when given one', function () {
+      const g = gameWith({ pieces: ['T', 'I', 'O'] });
+      assertEqual(g.piece.type, 'T');
+      assertEqual(g.queue[0], 'I');
+      assertEqual(g.queue[1], 'O');
+    });
+
+    it('clamps an absurd frame delta', function () {
+      const g = gameWith({ pieces: ['I'] });
+      const startY = g.piece.y;
+      // A backgrounded tab handing over thirty seconds at once.
+      Game.tick(g, 30000, NOTHING);
+      assert(g.timeMs <= Game.MAX_TICK_MS, 'the clock absorbed the whole gap');
+      assertEqual(g.piece.y, startY, 'the piece fell during a frozen frame');
+    });
+
+    it('drops one cell per second at level 1', function () {
+      const g = gameWith({ pieces: ['O'] });
+      const startY = g.piece.y;
+      frames(g, 63);   // 1008ms: just past the 1000ms interval, not two of them
+      assertEqual(g.piece.y, startY + 1);
+    });
+
+    it('moves one cell per action pulse, not per frame', function () {
+      const g = gameWith({ pieces: ['O'] });
+      const startX = g.piece.x;
+      Game.tick(g, 16, { right: true });
+      assertEqual(g.piece.x, startX + 1);
+      Game.tick(g, 16, NOTHING);
+      assertEqual(g.piece.x, startX + 1, 'the piece kept moving without an action');
+    });
+
+    it('slides as far as moveCells allows in one tick', function () {
+      const g = gameWith({ pieces: ['O'] });
+      Game.tick(g, 16, { left: true, moveCells: 10 });
+      assertEqual(g.piece.x, -1, 'an ARR-0 pulse should reach the wall in one frame');
+    });
+
+    it('stops at the wall', function () {
+      const g = gameWith({ pieces: ['O'] });
+      frames(g, 20, { left: true });
+      // The O's cells sit in box columns 1 and 2, so the leftmost legal
+      // box origin is -1.
+      assertEqual(g.piece.x, -1);
+      assertEqual(Board.collides(g.board, g.piece), false);
+    });
+
+    it('reports the ghost row', function () {
+      const g = gameWith({ pieces: ['O'] });
+      assertEqual(Game.ghostY(g), 38, 'an O resting on an empty floor');
+    });
+
+    it('hard drops, scores two per cell, and locks at once', function () {
+      const g = gameWith({ pieces: ['O', 'T'] });
+      const distance = 38 - g.piece.y;
+      const events = Game.tick(g, 16, { hardDrop: true });
+      assertEqual(g.scoring.score, distance * 2);
+      assert(events.some(e => e.type === 'lock'), 'no lock event');
+      assertEqual(g.piece.type, 'T', 'the next piece should already be active');
+      assertEqual(Board.isOccupied(g.board, 4, 39), true, 'the O landed on the floor');
+    });
+
+    it('scores one per cell for soft drop', function () {
+      const g = gameWith({ pieces: ['O'] });
+      const startY = g.piece.y;
+      frames(g, 30, { softDrop: true });
+      // 480ms of soft drop at a cell every 50ms.
+      assertEqual(g.piece.y - startY, 9);
+      assertEqual(g.scoring.score, 9);
+    });
+
+    it('locks about 500ms after landing, not before', function () {
+      const g = gameWith({ pieces: ['O', 'T'] });
+      dropToFloor(g);
+      assertEqual(g.piece.type, 'O', 'still the same piece once grounded');
+
+      let elapsed = g.lockMs;
+      let guard = 0;
+      while (g.piece.type === 'O' && guard++ < 200) {
+        Game.tick(g, 16, NOTHING);
+        elapsed += 16;
+      }
+      assert(elapsed >= 500 && elapsed <= 520, 'locked after ' + elapsed + 'ms, expected about 500ms');
+      assertEqual(g.piece.type, 'T');
+    });
+
+    it('resets the lock timer on a move, up to fifteen times', function () {
+      const g = gameWith({ pieces: ['O', 'T'], maxResets: 15 });
+      dropToFloor(g);
+
+      // Each nudge restarts the 500ms timer, so fifteen of them keep the
+      // piece alive well past it.
+      for (let i = 0; i < 15; i++) {
+        frames(g, 20);  // 320ms, comfortably under the lock delay
+        Game.tick(g, 16, i % 2 === 0 ? { left: true } : { right: true });
+      }
+      assertEqual(g.piece.type, 'O', 'the reset budget was not honoured');
+      assertEqual(g.resets, 15);
+
+      // Budget spent: further nudges no longer extend the timer.
+      frames(g, 40, { left: true });
+      assertEqual(g.piece.type, 'T', 'the piece never locked after the budget ran out');
+    });
+
+    it('holds a piece, swaps it back, and allows only one hold per piece', function () {
+      const g = gameWith({ pieces: ['T', 'I', 'O'] });
+      Game.tick(g, 16, { hold: true });
+      assertEqual(g.hold, 'T');
+      assertEqual(g.piece.type, 'I', 'the queue should have supplied the next piece');
+      assertEqual(g.canHold, false);
+
+      Game.tick(g, 16, { hold: true });
+      assertEqual(g.piece.type, 'I', 'a second hold on the same piece was allowed');
+
+      Game.tick(g, 16, { hardDrop: true });
+      assertEqual(g.canHold, true, 'hold should be available again after a lock');
+      Game.tick(g, 16, { hold: true });
+      assertEqual(g.hold, 'O');
+      assertEqual(g.piece.type, 'T', 'the held T should come back');
+    });
+
+    it('ends the game when a spawning piece has no room', function () {
+      // Filled from row 21 down, column 9 left open so nothing clears. The
+      // first O lands at rows 19-20, which then blocks the next spawn.
+      const rows = [];
+      for (let i = 0; i < 19; i++) rows.push('XXXXXXXXX.');
+      const g = gameWith({ pieces: ['O', 'O'], board: Board.fromRows(rows) });
+      const events = Game.tick(g, 16, { hardDrop: true });
+      assertEqual(g.status, 'over');
+      const over = events.filter(e => e.type === 'gameover')[0];
+      assert(over, 'no gameover event');
+      assertEqual(over.reason, 'blockout');
+    });
+
+    it('ends the game when a piece locks entirely above the visible field', function () {
+      // The whole visible field filled except column 9, so nothing clears
+      // and the O is forced to rest in the buffer.
+      const rows = [];
+      for (let i = 0; i < 20; i++) rows.push('XXXXXXXXX.');
+      const g = gameWith({ pieces: ['O', 'T'], board: Board.fromRows(rows) });
+      const events = Game.tick(g, 16, { hardDrop: true });
+      const over = events.filter(e => e.type === 'gameover')[0];
+      assert(over, 'no gameover event');
+      assertEqual(over.reason, 'lockout');
+    });
+
+    it('clears a line and reports the row', function () {
+      // The gap is columns 3..6, exactly where a spawned I sits.
+      const g = gameWith({ pieces: ['I'], board: Board.fromRows(['XXX....XXX']) });
+      const events = Game.tick(g, 16, { hardDrop: true });
+      const lock = events.filter(e => e.type === 'lock')[0];
+      assertEqual(lock.lines, 1);
+      assertDeepEqual(lock.rows, [39]);
+      assertEqual(g.scoring.lines, 1);
+    });
+
+    it('cannot reach the T-spin slot by dropping into it', function () {
+      // This is why a T-spin is a spin: the overhang blocks every vertical
+      // approach, so the only way in is a rotation.
+      const g = gameWith({ pieces: ['T'], board: tsdBoard() });
+      Game.tick(g, 16, { rotate180: true });
+      assertEqual(g.piece.state, '2');
+      dropToFloor(g);
+      assert(g.piece.y < 37, 'the overhang should have stopped the T above the slot');
+    });
+
+    it('awards a T-spin double performed through real rotation', function () {
+      const g = gameWith({ pieces: ['T'], board: tsdBoard() });
+      Game.tick(g, 16, { rotateCCW: true });   // 0 -> L, nub to the left
+      assertEqual(g.piece.state, 'L');
+      dropToFloor(g);
+      assertEqual(g.piece.y, 37, 'the L-facing T should slide down beside the slot');
+
+      const rotated = Game.tick(g, 16, { rotateCCW: true });  // L -> 2, into the slot
+      assert(rotated.some(e => e.type === 'rotate'), 'the rotation into the slot was rejected');
+      assertEqual(g.piece.state, '2');
+
+      const lock = untilLock(g).filter(e => e.type === 'lock')[0];
+      assert(lock, 'the T never locked');
+      assertEqual(lock.spin, 'tspin');
+      assertEqual(lock.lines, 2);
+      assertEqual(lock.kind, 'tspin-double');
+      assertDeepEqual(lock.rows, [38, 39]);
+    });
+
+    it('keeps the spin when a hard drop moves the piece zero cells', function () {
+      const g = gameWith({ pieces: ['T'], board: tsdBoard() });
+      Game.tick(g, 16, { rotateCCW: true });
+      dropToFloor(g);
+      Game.tick(g, 16, { rotateCCW: true });
+      const lock = Game.tick(g, 16, { hardDrop: true }).filter(e => e.type === 'lock')[0];
+      assertEqual(lock.spin, 'tspin', 'slamming an already-resting spin lost the bonus');
+    });
+
+    it('clears the spin claim when gravity moves the piece', function () {
+      const g = gameWith({ pieces: ['T'] });
+      Game.tick(g, 16, { rotateCW: true });
+      assertEqual(g.rotatedLast, true);
+      frames(g, 70);  // over a second at level 1: the piece falls a cell
+      assertEqual(g.rotatedLast, false, 'falling should cancel the spin claim');
+    });
+
+    it('clears the spin claim when the piece moves sideways', function () {
+      const g = gameWith({ pieces: ['T'] });
+      Game.tick(g, 16, { rotateCW: true });
+      assertEqual(g.rotatedLast, true);
+      Game.tick(g, 16, { right: true });
+      assertEqual(g.rotatedLast, false);
+    });
+
+    it('ends a sprint when it reaches its line goal', function () {
+      const g = gameWith({
+        mode: 'sprint',
+        pieces: ['I'],
+        sprintLines: 1,
+        board: Board.fromRows(['XXX....XXX'])
+      });
+      const events = Game.tick(g, 16, { hardDrop: true });
+      assertEqual(g.status, 'won');
+      const win = events.filter(e => e.type === 'win')[0];
+      assert(win, 'no win event');
+      assertEqual(win.lines, 1);
+    });
+
+    it('ignores input once the game is over', function () {
+      const rows = [];
+      for (let i = 0; i < 19; i++) rows.push('XXXXXXXXX.');
+      const g = gameWith({ pieces: ['O', 'O'], board: Board.fromRows(rows) });
+      Game.tick(g, 16, { hardDrop: true });
+      assertEqual(g.status, 'over');
+      const after = Game.tick(g, 16, { hardDrop: true, left: true, rotateCW: true });
+      assertDeepEqual(after, []);
+    });
+  });
 })();
