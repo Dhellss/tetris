@@ -211,11 +211,56 @@ html, body {
 
 #guide-canvas { display: block; }
 
-.guide-reference { font-size: 11px; line-height: 1.6; max-height: 340px; overflow-y: auto; width: 100%; }
-.guide-reference h3 { margin: 10px 0 4px; font-size: 12px; color: #8ea0ff; }
-.kick-rows { display: flex; flex-direction: column; gap: 2px; }
-.kick-row { display: flex; gap: 10px; font-family: ui-monospace, monospace; }
-.kick-row b { min-width: 64px; color: #9aa1bb; font-weight: 600; }
+.guide-reference { font-size: 12px; line-height: 1.6; width: 100%; overflow-y: auto; }
+
+.kick-intro { margin: 0 0 12px; color: #c4c9dc; }
+
+.kick-pickers { display: flex; gap: 8px; margin-bottom: 14px; }
+.kick-pickers select {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #eceef5;
+  background: #222636;
+  border: 1px solid #343a52;
+  border-radius: 6px;
+}
+
+/* The five candidate positions, left to right in the order they are tried. */
+.kick-strip { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.kick-try {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: #12141c;
+  border: 1px solid #262b3d;
+  border-radius: 8px;
+}
+
+.kick-try h4 {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8ea0ff;
+}
+
+.kick-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 11px);
+  grid-auto-rows: 11px;
+  gap: 1px;
+}
+
+.kick-cell { background: #1a1d28; border-radius: 1px; }
+/* Where the turn would have landed with no kick at all. */
+.kick-cell.nominal { box-shadow: inset 0 0 0 1px rgba(255, 217, 138, 0.8); }
+.kick-cell.filled { border-radius: 1px; }
+
+.kick-words { margin: 0; font-size: 11px; color: #9aa1bb; white-space: nowrap; }
+.kick-note { margin: 14px 0 0; font-size: 11px; color: #6f7694; }
 
 .guide-kick {
   position: absolute;

@@ -120,12 +120,12 @@
     {
       id: 'kick-table',
       title: 'The kick tables',
-      blurb: 'The five offsets SRS tries, for every rotation. The I piece has its own table. Offsets are listed x then y, with y counted upward.',
+      blurb: 'Every kick you have just watched comes from one short list. Here is that list, drawn out: the five places the game tries a piece, in order, for any turn you pick.',
       reference: true,
       rows: [],
       pieces: [],
       steps: [
-        { caption: 'J, L, S, T and Z share one table. The I piece uses the other. O never kicks, because its four states occupy the same cells.' }
+        { caption: 'The dashed outline is where the turn would have landed with no kick at all — so the gap between it and the solid piece IS the kick. Change the piece or the turn to see a different set of five.' }
       ]
     }
   ];
@@ -244,44 +244,136 @@
     let rafId = null;
     let lastMs = 0;
 
+    // Plain words for a table offset, which is written x then y with y
+    // counted upward.
+    function offsetWords(offset) {
+      const parts = [];
+      if (offset[0] !== 0) {
+        parts.push(Math.abs(offset[0]) + (offset[0] > 0 ? ' right' : ' left'));
+      }
+      if (offset[1] !== 0) {
+        parts.push(Math.abs(offset[1]) + (offset[1] > 0 ? ' up' : ' down'));
+      }
+      return parts.length === 0 ? 'stay put' : parts.join(', ');
+    }
+
+    const ORDINALS = ['1st try', '2nd try', '3rd try', '4th try', '5th try'];
+    const GRID = 8;      // room for the widest box plus a two-cell offset
+    const ORIGIN = 2;    // where the un-kicked box sits in that grid
+
+    // One little board showing where the piece would sit for this offset,
+    // with the un-kicked position dashed behind it.
+    function buildTry(type, toState, offset, index) {
+      const cells = Pieces.cells(type, toState);
+      const nominal = {};
+      const shifted = {};
+      for (let i = 0; i < cells.length; i++) {
+        nominal[(ORIGIN + cells[i].x) + ',' + (ORIGIN + cells[i].y)] = true;
+        shifted[(ORIGIN + offset[0] + cells[i].x) + ',' + (ORIGIN - offset[1] + cells[i].y)] = true;
+      }
+
+      const box = document.createElement('div');
+      box.className = 'kick-try';
+
+      const head = document.createElement('h4');
+      head.textContent = ORDINALS[index];
+      box.appendChild(head);
+
+      const grid = document.createElement('div');
+      grid.className = 'kick-grid';
+      for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+          const cell = document.createElement('span');
+          const key = x + ',' + y;
+          cell.className = 'kick-cell'
+            + (nominal[key] ? ' nominal' : '')
+            + (shifted[key] ? ' filled' : '');
+          if (shifted[key]) cell.style.background = Pieces.COLORS[type];
+          grid.appendChild(cell);
+        }
+      }
+      box.appendChild(grid);
+
+      const words = document.createElement('p');
+      words.className = 'kick-words';
+      words.textContent = offsetWords(offset);
+      box.appendChild(words);
+
+      return box;
+    }
+
     function renderReference() {
       const host = elements.reference;
       host.textContent = '';
 
-      const groups = [
-        { name: 'J, L, S, T, Z', table: SRS.KICKS_JLSTZ, dedupe: false },
-        { name: 'I', table: SRS.KICKS_I, dedupe: false },
-        { name: '180°, all pieces', table: SRS.KICKS_180, dedupe: true }
-      ];
+      const intro = document.createElement('p');
+      intro.className = 'kick-intro';
+      intro.textContent = 'When a rotation does not fit, the game does not refuse it. '
+        + 'It tries the piece in five places, in a fixed order, and keeps the first one that fits. '
+        + 'That nudge is the kick. Pick a piece and a turn to see the five it would work through.';
+      host.appendChild(intro);
 
-      for (const group of groups) {
-        const title = document.createElement('h3');
-        title.textContent = group.name;
-        host.appendChild(title);
+      const pickers = document.createElement('div');
+      pickers.className = 'kick-pickers';
 
-        const list = document.createElement('div');
-        list.className = 'kick-rows';
-        const seen = {};
-        for (const key of Object.keys(group.table)) {
-          const text = group.table[key].map(function (o) {
-            return '(' + o[0] + ',' + o[1] + ')';
-          }).join('  ');
-          // The 180 table shares one list across all four transitions.
-          if (group.dedupe && seen[text]) continue;
-          seen[text] = true;
-
-          const row = document.createElement('div');
-          row.className = 'kick-row';
-          const label = document.createElement('b');
-          label.textContent = group.dedupe ? 'any' : key.replace('>', ' → ');
-          const value = document.createElement('span');
-          value.textContent = text;
-          row.appendChild(label);
-          row.appendChild(value);
-          list.appendChild(row);
-        }
-        host.appendChild(list);
+      const pieceSel = document.createElement('select');
+      for (const type of ['T', 'J', 'L', 'S', 'Z', 'I']) {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type + ' piece';
+        pieceSel.appendChild(option);
       }
+
+      const turnSel = document.createElement('select');
+      const TURNS = [
+        ['0>R', '0 → R  (clockwise)'],
+        ['R>2', 'R → 2  (clockwise)'],
+        ['2>L', '2 → L  (clockwise)'],
+        ['L>0', 'L → 0  (clockwise)'],
+        ['0>L', '0 → L  (anticlockwise)'],
+        ['L>2', 'L → 2  (anticlockwise)'],
+        ['2>R', '2 → R  (anticlockwise)'],
+        ['R>0', 'R → 0  (anticlockwise)'],
+        ['0>2', '0 → 2  (half turn)'],
+        ['R>L', 'R → L  (half turn)'],
+        ['2>0', '2 → 0  (half turn)'],
+        ['L>R', 'L → R  (half turn)']
+      ];
+      for (const turn of TURNS) {
+        const option = document.createElement('option');
+        option.value = turn[0];
+        option.textContent = turn[1];
+        turnSel.appendChild(option);
+      }
+
+      pickers.appendChild(pieceSel);
+      pickers.appendChild(turnSel);
+      host.appendChild(pickers);
+
+      const strip = document.createElement('div');
+      strip.className = 'kick-strip';
+      host.appendChild(strip);
+
+      const note = document.createElement('p');
+      note.className = 'kick-note';
+      host.appendChild(note);
+
+      function draw() {
+        const type = pieceSel.value;
+        const key = turnSel.value;
+        const offsets = SRS.table(type, key.charAt(0), key.charAt(2));
+        strip.textContent = '';
+        for (let i = 0; i < offsets.length; i++) {
+          strip.appendChild(buildTry(type, key.charAt(2), offsets[i], i));
+        }
+        note.textContent = type === 'I'
+          ? 'The I piece has its own table — it is four cells long, so it needs to move further to get clear.'
+          : 'J, L, S, T and Z all share this table. The O piece is missing here because it never kicks: its four states occupy the same cells.';
+      }
+
+      pieceSel.addEventListener('change', draw);
+      turnSel.addEventListener('change', draw);
+      draw();
     }
 
     function rebuild() {
