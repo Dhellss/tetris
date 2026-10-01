@@ -261,4 +261,50 @@
       assertEqual(loaded.handling.arrMs, 17);
     });
   });
+
+  describe('Renderer.layout', function () {
+    it('fits a comfortable desktop viewport', function () {
+      const l = Renderer.layout(1280, 800);
+      assert(l.cell > 20, 'cells are tiny on a 1280x800 screen: ' + l.cell);
+      assertEqual(l.boardW, l.cell * 10);
+      assertEqual(l.boardH, l.cell * 20);
+      assert(l.totalW <= 1280, 'the layout is wider than the viewport');
+      assert(l.totalH <= 800, 'the layout is taller than the viewport');
+    });
+
+    it('keeps all twenty rows on a 720p screen', function () {
+      const l = Renderer.layout(1280, 720);
+      assert(l.boardH <= 720, 'the board does not fit vertically');
+      assertEqual(l.boardH / l.cell, 20);
+    });
+
+    it('clamps to a minimum cell size instead of vanishing', function () {
+      const l = Renderer.layout(100, 50);
+      assertEqual(l.cell, Renderer.MIN_CELL);
+      assert(l.boardW > 0 && l.boardH > 0, 'the board collapsed');
+    });
+
+    it('survives a zero-size viewport', function () {
+      const l = Renderer.layout(0, 0);
+      assertEqual(l.cell, Renderer.MIN_CELL);
+      assert(l.totalW >= 1 && l.totalH >= 1, 'a canvas dimension went below 1');
+    });
+
+    it('survives nonsense input without producing NaN', function () {
+      for (const pair of [[NaN, NaN], [-500, -500], [undefined, undefined], [null, 0]]) {
+        const l = Renderer.layout(pair[0], pair[1]);
+        for (const key of Object.keys(l)) {
+          assert(isFinite(l[key]), 'layout(' + pair[0] + ',' + pair[1] + ').' + key + ' = ' + l[key]);
+        }
+        assert(l.cell >= Renderer.MIN_CELL, 'cell fell below the minimum');
+      }
+    });
+
+    it('places the board between the two panels', function () {
+      const l = Renderer.layout(1280, 800);
+      assert(l.holdX < l.boardX, 'the hold panel is not left of the board');
+      assert(l.nextX > l.boardX, 'the next panel is not right of the board');
+      assertEqual(l.nextX, l.boardX + l.boardW + l.gap);
+    });
+  });
 })();

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0e0f15" />
+<meta name="description" content="A modern Tetris with an animated guide to spins and wall kicks." />
+<title>Tetris</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="stage">
+    <canvas id="board"></canvas>
+  </main>
+
+  <noscript>
+    <p class="fallback">This game needs JavaScript enabled to run.</p>
+  </noscript>
+
+  <script src="engine/pieces.js"></script>
+  <script src="engine/board.js"></script>
+  <script src="engine/randomizer.js"></script>
+  <script src="engine/srs.js"></script>
+  <script src="engine/scoring.js"></script>
+  <script src="engine/game.js"></script>
+  <script src="ui/renderer.js"></script>
+  <script src="ui/input.js"></script>
+  <!-- later tasks add hud.js, screens.js, and spin-guide.js here -->
+  <script src="main.js"></script>
+</body>
+</html>
