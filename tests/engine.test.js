@@ -180,4 +180,246 @@
       assertEqual(Randomizer.create().next(), Randomizer.create(0).next());
     });
   });
+
+  // A collision callback that treats every cell as blocked except an
+  // explicitly allowed set. Lets a test prove which kick offset fired
+  // without hand-crafting a board for all 16 transitions.
+  function onlyAllow(cellKeys) {
+    const allowed = {};
+    for (const key of cellKeys) allowed[key] = true;
+    return function (x, y) {
+      return allowed[x + ',' + y] !== true;
+    };
+  }
+
+  function cellKeysAt(type, state, x, y) {
+    return Pieces.cells(type, state).map(function (c) {
+      return (x + c.x) + ',' + (y + c.y);
+    });
+  }
+
+  function boardOccupancy(board) {
+    return function (x, y) {
+      return Board.isOccupied(board, x, y);
+    };
+  }
+
+  describe('SRS tables', function () {
+    it('matches the published JLSTZ table exactly', function () {
+      assertDeepEqual(SRS.KICKS_JLSTZ, {
+        '0>R': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+        'R>0': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+        'R>2': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+        '2>R': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+        '2>L': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+        'L>2': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+        'L>0': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+        '0>L': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]
+      });
+    });
+
+    it('matches the published I table exactly', function () {
+      assertDeepEqual(SRS.KICKS_I, {
+        '0>R': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+        'R>0': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+        'R>2': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+        '2>R': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+        '2>L': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+        'L>2': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+        'L>0': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+        '0>L': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]]
+      });
+    });
+
+    it('walks all four states in both directions', function () {
+      assertEqual(SRS.nextState('0', 1), 'R');
+      assertEqual(SRS.nextState('R', 1), '2');
+      assertEqual(SRS.nextState('2', 1), 'L');
+      assertEqual(SRS.nextState('L', 1), '0');
+      assertEqual(SRS.nextState('0', -1), 'L');
+      assertEqual(SRS.nextState('L', -1), '2');
+      assertEqual(SRS.nextState('0', 2), '2');
+      assertEqual(SRS.nextState('R', 2), 'L');
+    });
+
+    it('gives O no table', function () {
+      assertEqual(SRS.table('O', '0', 'R'), null);
+    });
+  });
+
+  describe('SRS.rotate offset order', function () {
+    // For every transition and every offset index, build a world where
+    // only that offset fits, then assert rotate() found it. This is the
+    // guard against a mis-ordered or mistyped table.
+    it('selects each offset index in turn, for every transition', function () {
+      const cases = [
+        { types: ['J', 'L', 'S', 'T', 'Z'], table: SRS.KICKS_JLSTZ },
+        { types: ['I'], table: SRS.KICKS_I }
+      ];
+      let checked = 0;
+
+      for (const group of cases) {
+        for (const type of group.types) {
+          for (const key of Object.keys(group.table)) {
+            const from = key.charAt(0);
+            const to = key.charAt(2);
+            const dir = SRS.nextState(from, 1) === to ? 1 : -1;
+            const offsets = group.table[key];
+
+            for (let k = 0; k < offsets.length; k++) {
+              const startX = 10;
+              const startY = 10;
+              const targetX = startX + offsets[k][0];
+              const targetY = startY - offsets[k][1]; // table y is up-positive
+              const isOccupied = onlyAllow(cellKeysAt(type, to, targetX, targetY));
+              const result = SRS.rotate(
+                { type: type, state: from, x: startX, y: startY },
+                dir,
+                isOccupied
+              );
+              assert(result !== null, type + ' ' + key + ' offset ' + k + ' was rejected');
+              assertEqual(result.kickIndex, k, type + ' ' + key + ' picked the wrong offset');
+              assertEqual(result.piece.x, targetX, type + ' ' + key + ' offset ' + k + ' x');
+              assertEqual(result.piece.y, targetY, type + ' ' + key + ' offset ' + k + ' y');
+              assertEqual(result.piece.state, to);
+              checked++;
+            }
+          }
+        }
+      }
+
+      assertEqual(checked, 6 * 8 * 5, 'expected 240 offset checks');
+    });
+
+    it('converts table y to board y exactly once', function () {
+      // T 0>R offset index 3 is (0,-2): two rows DOWN in board coordinates.
+      const isOccupied = onlyAllow(cellKeysAt('T', 'R', 10, 12));
+      const result = SRS.rotate({ type: 'T', state: '0', x: 10, y: 10 }, 1, isOccupied);
+      assertEqual(result.kickIndex, 3);
+      assertEqual(result.piece.y, 12, 'a -2 table offset moves the piece down, not up');
+    });
+
+    it('does not mutate the piece it was given', function () {
+      const piece = { type: 'T', state: '0', x: 4, y: 20 };
+      SRS.rotate(piece, 1, function () { return false; });
+      assertDeepEqual(piece, { type: 'T', state: '0', x: 4, y: 20 });
+    });
+
+    it('rotates O in place with no kick', function () {
+      const result = SRS.rotate({ type: 'O', state: '0', x: 4, y: 20 }, 1, function () { return false; });
+      assertEqual(result.kickIndex, 0);
+      assertEqual(result.piece.x, 4);
+      assertEqual(result.piece.y, 20);
+      assertEqual(result.piece.state, 'R');
+    });
+  });
+
+  describe('SRS.rotate against real boards', function () {
+    it('wall-kicks a vertical I away from the left wall', function () {
+      const board = Board.create();
+      const result = SRS.rotate({ type: 'I', state: 'R', x: -2, y: 20 }, -1, boardOccupancy(board));
+      assertEqual(result.kickIndex, 1, 'the +2 offset should fire');
+      assertEqual(result.piece.x, 0);
+      assertEqual(result.piece.state, '0');
+    });
+
+    it('floor-kicks a flat I off the floor', function () {
+      const board = Board.create();
+      const result = SRS.rotate({ type: 'I', state: '0', x: 3, y: 38 }, 1, boardOccupancy(board));
+      assertEqual(result.kickIndex, 4, 'only the last offset lifts the I clear of the floor');
+      assertEqual(result.piece.x, 4);
+      assertEqual(result.piece.y, 36);
+    });
+
+    it('rejects a rotation when all five offsets collide', function () {
+      const board = Board.fromRows([
+        'XXXXXXXXXX',
+        'XXXX.XXXXX',
+        'XXX...XXXX',
+        'XXXXXXXXXX'
+      ]);
+      const result = SRS.rotate({ type: 'T', state: '0', x: 3, y: 37 }, 1, boardOccupancy(board));
+      assertEqual(result, null);
+    });
+
+    it('kicks a 180 upward off the floor before trying downward', function () {
+      const board = Board.fromRows(['XXXXXXXXXX']);
+      // A point-up T sitting one row above the floor. Rotating it 180
+      // needs a row of clearance, and the only clearance is above: at the
+      // (0,0) offset the T's new nub would land inside the floor row.
+      const piece = { type: 'T', state: '0', x: 3, y: 37 };
+      assertEqual(Board.collides(board, piece), false, 'the T starts in a legal spot');
+      const result = SRS.rotate(piece, 2, boardOccupancy(board));
+      assert(result !== null, '180 off the floor was rejected');
+      assertEqual(result.piece.state, '2');
+      assertEqual(result.kickIndex, 1, 'the upward offset should fire');
+      assertEqual(result.piece.y, 36, '180 kicked downward into the floor');
+    });
+  });
+
+  describe('SRS.classifySpin', function () {
+    it('awards a full T-spin for a double setup', function () {
+      const board = Board.fromRows([
+        '.....X....',
+        'XXX...XXXX',
+        'XXXX.XXXXX'
+      ]);
+      const piece = { type: 'T', state: '2', x: 3, y: 37 };
+      assertEqual(Board.collides(board, piece), false, 'the T fits the slot');
+      assertEqual(SRS.classifySpin(piece, 0, boardOccupancy(board)), 'tspin');
+    });
+
+    it('awards a full T-spin for a triple setup', function () {
+      const board = Board.fromRows([
+        'XXXX.XXXXX',
+        'XXXX..XXXX',
+        'XXXX.XXXXX'
+      ]);
+      const piece = { type: 'T', state: 'R', x: 3, y: 37 };
+      assertEqual(Board.collides(board, piece), false, 'the T fits the slot');
+      assertEqual(SRS.classifySpin(piece, 4, boardOccupancy(board)), 'tspin');
+    });
+
+    it('awards a mini when only one front corner is filled', function () {
+      const board = Board.fromRows([
+        '.....X....',
+        'XXX...XXXX',
+        'XXXXXXXXXX'
+      ]);
+      const piece = { type: 'T', state: '0', x: 3, y: 37 };
+      assertEqual(Board.collides(board, piece), false, 'the T fits the slot');
+      assertEqual(SRS.classifySpin(piece, 0, boardOccupancy(board)), 'mini');
+    });
+
+    it('upgrades a mini to a full T-spin when the fifth offset fired', function () {
+      const board = Board.fromRows([
+        '.....X....',
+        'XXX...XXXX',
+        'XXXXXXXXXX'
+      ]);
+      const piece = { type: 'T', state: '0', x: 3, y: 37 };
+      assertEqual(SRS.classifySpin(piece, 4, boardOccupancy(board)), 'tspin');
+    });
+
+    it('awards nothing on an open board', function () {
+      const board = Board.create();
+      const piece = { type: 'T', state: '0', x: 3, y: 30 };
+      assertEqual(SRS.classifySpin(piece, 0, boardOccupancy(board)), 'none');
+    });
+
+    it('awards nothing to pieces other than T', function () {
+      const board = Board.fromRows([
+        'XXXXXXXXXX',
+        'XXX...XXXX',
+        'XXXXXXXXXX'
+      ]);
+      for (const type of ['I', 'J', 'L', 'O', 'S', 'Z']) {
+        assertEqual(
+          SRS.classifySpin({ type: type, state: '0', x: 3, y: 37 }, 4, boardOccupancy(board)),
+          'none',
+          type + ' earned a spin'
+        );
+      }
+    });
+  });
 })();

@@ -163,8 +163,11 @@ I kicks:
 O never kicks; its four states occupy the same cells.
 
 **180° rotation** is supported on its own key. It tests `(0,0)` then
-`(0,-1)` then `(0,+1)` then `(+1,0)` then `(-1,0)`, in that order, and
-is rejected if all fail. A 180° rotation never awards a T-spin.
+`(0,+1)` then `(0,-1)` then `(+1,0)` then `(-1,0)`, in that order, and
+is rejected if all fail. Up is tried before down because a 180° is
+usually performed with the piece resting on a surface, so the row of
+clearance it needs is above: trying downward first would fail the most
+common case. A 180° rotation never awards a T-spin.
 
 ### T-spin detection
 
